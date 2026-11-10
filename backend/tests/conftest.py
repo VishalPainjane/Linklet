@@ -27,7 +27,10 @@ def anyio_backend() -> str:
 @pytest.fixture
 async def test_engine() -> AsyncIterator[AsyncEngine]:
     """Provide a PostgreSQL async engine with connection pooling for testing."""
-    target_url = os.environ.get("TEST_DATABASE_URL", settings.database_url)
+    target_url = os.environ.get(
+        "TEST_DATABASE_URL",
+        "postgresql+asyncpg://linklet:local-only-change-me@localhost:5433/linklet_test",
+    )
     if target_url.startswith("postgres://"):
         target_url = target_url.replace("postgres://", "postgresql+asyncpg://", 1)
     elif target_url.startswith("postgresql://") and not target_url.startswith(

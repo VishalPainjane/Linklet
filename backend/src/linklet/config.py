@@ -29,7 +29,7 @@ class Settings(BaseSettings):
 
     # PostgreSQL Database
     database_url: str = Field(
-        default="postgresql+asyncpg://linklet:local-only-change-me@localhost:5432/linklet",
+        default="postgresql+asyncpg://linklet:local-only-change-me@localhost:5433/linklet",
         description="SQLAlchemy async PostgreSQL connection string",
     )
     direct_database_url: str | None = Field(
