@@ -1,0 +1,22 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "linklet-api-worker",
+  "main": "src/worker.ts",
+  "compatibility_date": "2026-11-10",
+  "compatibility_flags": ["nodejs_compat"],
+  "hyperdrive": [
+    {
+      "binding": "HYPERDRIVE",
+      "id": "YOUR_HYPERDRIVE_ID"
+    }
+  ],
+  "queues": {
+    "producers": [
+      {
+        "binding": "CLICK_EVENTS",
+        "queue": "url-shortener-clicks"
+      }
+    ]
+  }
+}
+

@@ -1,0 +1,17 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "composite": true,
+    "types": ["@cloudflare/workers-types"]
+  },
+  "references": [
+    { "path": "../../packages/shared-types" },
+    { "path": "../../packages/validation" },
+    { "path": "../../packages/database" },
+    { "path": "../../adapters/postgres-hyperdrive" }
+  ],
+  "include": ["src/**/*"]
+}
+

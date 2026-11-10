@@ -1,0 +1,19 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "composite": true,
+    "types": ["@cloudflare/workers-types"]
+  },
+  "references": [
+    { "path": "../../packages/shared-types" },
+    { "path": "../../packages/core" },
+    { "path": "../../adapters/postgres-hyperdrive" },
+    { "path": "../../adapters/redis-upstash" },
+    { "path": "../../adapters/cloudflare-queues" },
+    { "path": "../api-node" }
+  ],
+  "include": ["src/**/*"]
+}
+

@@ -1,0 +1,26 @@
+{
+  "name": "@linklet/queue-consumer-worker",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/consumer.js",
+  "types": "./dist/consumer.d.ts",
+  "scripts": {
+    "build": "tsc -b",
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "clean": "node -e \"fs.rmSync('dist', { recursive: true, force: true })\""
+  },
+  "dependencies": {
+    "@linklet/adapter-postgres-hyperdrive": "workspace:*",
+    "@linklet/database": "workspace:*",
+    "@linklet/shared-types": "workspace:*",
+    "@linklet/validation": "workspace:*"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20250214.0",
+    "typescript": "^5.7.3",
+    "wrangler": "^3.109.2"
+  }
+}
+
