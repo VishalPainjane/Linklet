@@ -3,7 +3,10 @@ import type {
   UrlStats,
   ClickEvent,
   IdempotencyRecord,
+  AbuseReport,
+  AbuseReason,
 } from "@linklet/shared-types";
+import { randomUUID } from "node:crypto";
 
 export interface InsertUrlParams {
   code: string;
@@ -18,6 +21,18 @@ export interface UrlRepository {
   findByCode(code: string): Promise<UrlRecord | null>;
   disable(code: string, ownerId?: string | null): Promise<boolean>;
   listByOwner(ownerId: string, limit: number, offset: number): Promise<UrlRecord[]>;
+}
+
+export interface InsertAbuseParams {
+  code: string;
+  reason: AbuseReason;
+  comment?: string | null | undefined;
+  reporterIp?: string | null | undefined;
+}
+
+export interface AbuseRepository {
+  recordReport(params: InsertAbuseParams): Promise<string>;
+  getReportsByCode(code: string): Promise<AbuseReport[]>;
 }
 
 export interface InsertIdempotencyParams {

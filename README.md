@@ -1,121 +1,80 @@
-# Linklet — Systems-Engineered URL Shortener & Concurrency Lab
+# Linklet
 
-A production-grade, systems-engineered URL shortening service designed as a laboratory for concurrency, database locks, cache stampede prevention, asynchronous event pipelines, and load measurement.
+> High-performance URL shortener and systems-engineering laboratory.
 
-Built according to the [`url_shortener_engineering_blueprint.md`](./url_shortener_engineering_blueprint.md).
-
----
-
-## 1. System Engineering Principles
-
-- **No ORM abstraction layers:** Direct, parameterized SQL queries exposing query plans, indexes, transactions, and explicit locks.
-- **Strict typing & zero runtime leakage:** Strict TypeScript with `exactOptionalPropertyTypes`, custom typed `DomainError` hierarchy, and zero credential or stack-trace leaks in HTTP responses.
-- **Modulo-bias-free random code generator:** Cryptographic rejection sampling over Base62 (`62^8` keyspace = 218 trillion codes), rejecting biased bytes `[248..255]`.
-- **Database-enforced concurrency:** Primary key B-tree on `code` enforces uniqueness under concurrent creation and custom alias claims without brittle distributed locks.
-- **Cache stampede elimination:** In-flight query collapsing (`SingleFlight`) prevents multiple concurrent misses for the same key from dogpiling PostgreSQL.
-- **At-least-once delivery with idempotent processing:** Consumer transactions deduplicate incoming click events via `processed_events` primary key before incrementing `url_stats`.
+Linklet is an industrial-strength URL shortener built to study backend concurrency, caching dynamics, asynchronous message delivery, and tail-latency profiling under heavy load.
 
 ---
 
-## 2. Architecture & Monorepo Layout
+## Architecture & Technology Stack
 
-```text
-Linklet/
-├── apps/
-│   ├── api-node/                  # Express 5 on Node.js 22 LTS
-│   ├── api-worker/                # Cloudflare Workers adapter (Phase 8)
-│   └── queue-consumer-worker/     # Cloudflare Queues consumer (Phase 8)
-│
-├── packages/
-│   ├── shared-types/              # Domain models, errors, and contracts
-│   ├── code-generator/            # Base62 crypto generator with rejection sampling
-│   ├── validation/                # Zod schemas (URL security, alias rules, events)
-│   ├── cache/                     # CacheRepository, custom O(1) LRU & SingleFlight
-│   ├── events/                    # ClickEvent contracts and coarse metadata extractors
-│   ├── rate-limiter/              # Sliding window & atomic Redis Lua script
-│   ├── database/                  # Schema, migrations runner, and repository contracts
-│   └── core/                      # UrlService (creation, resolution, invalidation)
-│
-├── adapters/
-│   ├── postgres-node/             # pg.Pool connection adapter & SQL transactions
-│   ├── redis-node/                # node-redis client with timeouts & reconnect backoff
-│   └── rabbitmq/                  # amqplib publisher confirm channel & consumer
-│
-├── migrations/
-│   └── 001_initial_schema.sql     # PostgreSQL schema, check constraints & indexes
-│
-├── testing/
-│   └── concurrency/               # 1,000+ virtual user race condition harness
-│
-├── docker-compose.yml             # PostgreSQL 17, Redis 7, RabbitMQ 4
-├── pnpm-workspace.yaml
-├── tsconfig.base.json
-└── package.json
-```
+- **Backend Runtime:** Python 3.12+ managed by [`uv`](https://astral.sh/uv)
+- **API Framework:** [FastAPI](https://fastapi.tiangolo.com/) with asynchronous ASGI routing via Uvicorn
+- **ORM & Data Persistence:** [SQLAlchemy 2.x](https://www.sqlalchemy.org/) async ORM with `asyncpg` and PostgreSQL 17
+- **Database Migrations:** [Alembic](https://alembic.sqlalchemy.org/)
+- **Distributed Cache & Rate Limiting:** Redis 7 (`redis.asyncio`) with SingleFlight coalescing and atomic Lua rate limiters
+- **In-Memory Cache Experiment:** Process-local $O(1)$ LRU Cache implemented from scratch with a Doubly-Linked List and Hash Map
+- **Asynchronous Messaging:** RabbitMQ 4 (`aio-pika`) with topic exchanges, publisher confirms, prefetch bounds, DLQ topology, and idempotent consumer deduplication
+- **Performance & Load Testing:** [Locust](https://locust.io/) modeling mixed read/write workloads and tail-latency percentiles
+- **Frontend Dashboard:** [Next.js 15](https://nextjs.org/) App Router, React 19, and Tailwind CSS
 
 ---
 
-## 3. Getting Started
+## Quickstart
 
 ### Prerequisites
+- Python 3.12+
+- `uv` (`pip install uv` or `winget install astral-sh.uv`)
+- Node.js 20+ and `pnpm` (for the Next.js frontend)
+- Docker & Docker Compose (for PostgreSQL, Redis, and RabbitMQ)
 
-- Node.js >= 22 LTS
-- pnpm >= 10
-- Docker & Docker Compose (optional for local full-stack lab; in-memory fallback included for headless testing)
-
-### Installation & Build
-
+### 1. Start Infrastructure
 ```bash
-# Install dependencies across all workspace packages
+docker compose -f infrastructure/docker-compose.yml up -d
+```
+Starts:
+- PostgreSQL 17 (`localhost:5432`)
+- Redis 7 (`localhost:6379`)
+- RabbitMQ 4 with Management UI (`localhost:5672`, UI at `localhost:15672`)
+
+### 2. Run Backend
+```bash
+cd backend
+python -m uv sync --all-groups
+python -m uv run alembic upgrade head
+python -m uv run uvicorn linklet.main:app --reload --host 127.0.0.1 --port 8000
+```
+API Documentation is available at [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs).
+
+### 3. Run Test Suite
+```bash
+cd backend
+python -m uv run pytest -v
+python -m uv run ruff check .
+python -m uv run mypy src
+```
+
+### 4. Run Load Tests with Locust
+```bash
+cd backend
+python -m uv run locust -f ../loadtests/locustfile.py --host http://localhost:8000
+```
+Interactive UI accessible at [http://localhost:8089](http://localhost:8089).
+
+### 5. Run Frontend
+```bash
+cd frontend
 pnpm install
-
-# Typecheck all packages
-pnpm typecheck
-
-# Build all packages
-pnpm build
+pnpm dev
 ```
-
-### Running Tests
-
-```bash
-# Run all tests (unit, property-based, integration, and concurrency)
-pnpm test
-```
-
-### Starting the Local Development Lab
-
-```bash
-# 1. Start local PostgreSQL, Redis, and RabbitMQ
-docker compose up -d
-
-# 2. Start the Express 5 API server
-pnpm dev:api
-```
+Accessible at [http://localhost:3000](http://localhost:3000).
 
 ---
 
-## 4. API Endpoints
+## Concurrency and Correctness Invariants
 
-| Method | Endpoint | Description | Status Codes |
-|---|---|---|---|
-| `POST` | `/api/v1/urls` | Create short link (generated or custom alias, optional `Idempotency-Key`) | `201`, `400`, `409`, `422`, `429` |
-| `GET` | `/:code` | Redirect to destination URL (`Cache-Control: no-store`) | `302`, `404`, `410` |
-| `HEAD` | `/:code` | Retrieve redirect headers without response body | `302`, `404`, `410` |
-| `GET` | `/api/v1/urls/:code` | Retrieve link metadata without tracking click | `200`, `404` |
-| `DELETE` | `/api/v1/urls/:code` | Disable short link and invalidate cache | `200`, `404` |
-| `GET` | `/api/v1/urls/:code/stats`| Retrieve click analytics | `200`, `404` |
-| `GET` | `/health` | Liveness probe | `200` |
-| `GET` | `/ready` | Readiness probe (database/cache connectivity check) | `200`, `503` |
-
----
-
-## 5. Concurrency Test Invariants
-
-The test suite in [`testing/concurrency/concurrency.test.ts`](./testing/concurrency/concurrency.test.ts) verifies:
-
-1. **Custom Alias Races:** 1,000 simultaneous requests claiming the same custom alias results in exactly 1 success (`201`) and 999 conflicts (`409`).
-2. **Duplicate Destination Creation:** 500 simultaneous requests for the same destination URL create 500 independent, globally unique short codes.
-3. **Idempotency Races:** 500 simultaneous client retries with the same `Idempotency-Key` create exactly 1 logical URL; all 500 receive the exact same response.
-4. **Cache Stampede Protection:** 1,000 simultaneous cache misses on a cold code result in exactly 1 PostgreSQL lookup via `SingleFlight`.
-
+- **Zero Collisions on Generated Codes:** Bounded retry loop (`INSERT ... ON CONFLICT (code) DO NOTHING RETURNING code`) with Base62 cryptographic random sampling.
+- **Custom Alias Race Guarantee:** Under 50 simultaneous contenders claiming the same alias, exactly 1 wins (HTTP 201) and 49 receive HTTP 409 Conflict.
+- **Atomic Idempotency:** Concurrent requests submitting identical payloads with the same `Idempotency-Key` are resolved to the winner's canonical response without duplicate URL creation.
+- **Cache Stampede Prevention:** SingleFlight mutex per key coalesces concurrent cache misses during cold-cache bursts.
+- **Idempotent Queue Consumer:** Deduplication ledger (`processed_events`) guarantees at-least-once message delivery without double-counting click statistics.

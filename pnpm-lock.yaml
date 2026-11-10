@@ -450,7 +450,7 @@ importers:
         specifier: ^3.109.2
         version: 3.114.17(@cloudflare/workers-types@4.20260702.1)
 
-  apps/web:
+  frontend:
     dependencies:
       clsx:
         specifier: ^2.1.1

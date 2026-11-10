@@ -66,6 +66,17 @@ export interface IdempotencyRecord {
   expiresAt: Date;
 }
 
+export type AbuseReason = "phishing" | "malware" | "spam" | "illegal" | "other";
+
+export interface AbuseReport {
+  id: string;
+  code: string;
+  reason: AbuseReason;
+  comment?: string | null | undefined;
+  reporterIp?: string | null | undefined;
+  reportedAt: Date;
+}
+
 // --- System Errors ---
 
 export class DomainError extends Error {

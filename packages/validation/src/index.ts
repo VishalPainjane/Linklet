@@ -51,6 +51,15 @@ export const destinationUrlSchema = z
         if (parsed.username !== "" || parsed.password !== "") {
           return false;
         }
+        // Reject cloud metadata addresses
+        const host = parsed.hostname.toLowerCase();
+        if (
+          host === "169.254.169.254" ||
+          host === "metadata.google.internal" ||
+          host === "instance-data"
+        ) {
+          return false;
+        }
         return true;
       } catch {
         return false;
@@ -115,6 +124,13 @@ export const idempotencyKeyHeaderSchema = z
   .max(128)
   .regex(/^[\x21-\x7E]+$/, "Idempotency key must be ASCII printable without spaces")
   .optional();
+
+export const abuseReportSchema = z
+  .object({
+    reason: z.enum(["phishing", "malware", "spam", "illegal", "other"]),
+    comment: z.string().max(1000).optional(),
+  })
+  .strict();
 
 /**
  * Helper to validate data using a Zod schema and throw typed ValidationError
