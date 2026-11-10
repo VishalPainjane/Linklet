@@ -1,0 +1,26 @@
+{
+  "name": "@linklet/queue-consumer-node",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -b",
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "test": "vitest run",
+    "clean": "node -e \"fs.rmSync('dist', { recursive: true, force: true })\""
+  },
+  "dependencies": {
+    "@linklet/adapter-postgres-node": "workspace:*",
+    "@linklet/adapter-rabbitmq": "workspace:*",
+    "@linklet/database": "workspace:*",
+    "@linklet/shared-types": "workspace:*",
+    "dotenv": "^16.4.7"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.5"
+  }
+}
+

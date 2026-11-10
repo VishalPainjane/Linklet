@@ -1,0 +1,18 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "composite": true
+  },
+  "references": [
+    { "path": "../shared-types" },
+    { "path": "../code-generator" },
+    { "path": "../validation" },
+    { "path": "../cache" },
+    { "path": "../events" },
+    { "path": "../database" }
+  ],
+  "include": ["src/**/*"]
+}
+

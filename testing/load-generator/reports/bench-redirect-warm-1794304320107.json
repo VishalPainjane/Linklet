@@ -1,0 +1,32 @@
+{
+  "scenario": "redirect-warm",
+  "model": "closed",
+  "targetRps": 1000,
+  "virtualUsers": 50,
+  "durationSeconds": 1,
+  "actualDurationSeconds": 1,
+  "requestsScheduled": 2200,
+  "requestsDispatched": 2200,
+  "requestsCompleted": 0,
+  "throughputRps": 0,
+  "statusCodes": {},
+  "timeouts": 0,
+  "networkErrors": 2200,
+  "latencyMs": {
+    "min": 13.47,
+    "p50": 19.75,
+    "p90": 32.75,
+    "p95": 37.25,
+    "p99": 73.25,
+    "p999": 79.25,
+    "max": 79.96,
+    "mean": 22.53,
+    "count": 2200
+  },
+  "generator": {
+    "cpuUserSec": 0.86,
+    "cpuSystemSec": 0.98,
+    "rssMb": 95.5
+  },
+  "timestamp": "2026-11-10T09:52:01.112Z"
+}

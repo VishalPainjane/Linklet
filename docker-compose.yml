@@ -1,0 +1,114 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: linklet_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-shortener}
+      POSTGRES_USER: ${POSTGRES_USER:-shortener}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-local-dev-only}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-shortener} -d ${POSTGRES_DB:-shortener}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - linklet_net
+
+  redis:
+    image: redis:7-alpine
+    container_name: linklet_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: ["redis-server", "--appendonly", "yes"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - linklet_net
+
+  rabbitmq:
+    image: rabbitmq:4-management-alpine
+    container_name: linklet_rabbitmq
+    restart: unless-stopped
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - linklet_net
+
+  api:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/api.Dockerfile
+    container_name: linklet_api
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      DATABASE_URL: postgres://${POSTGRES_USER:-shortener}:${POSTGRES_PASSWORD:-local-dev-only}@postgres:5432/${POSTGRES_DB:-shortener}
+      REDIS_URL: redis://redis:6379
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672
+      PUBLIC_SHORT_DOMAIN: http://localhost:3001
+      ALLOWED_WEB_ORIGINS: http://localhost:3000
+      CACHE_DEFAULT_TTL_SECONDS: 900
+      RATE_LIMIT_CREATE_WINDOW_SECONDS: 60
+      RATE_LIMIT_CREATE_MAX_REQUESTS: 60
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - linklet_net
+
+  consumer:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/consumer.Dockerfile
+    container_name: linklet_consumer
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgres://${POSTGRES_USER:-shortener}:${POSTGRES_PASSWORD:-local-dev-only}@postgres:5432/${POSTGRES_DB:-shortener}
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672
+      RABBITMQ_QUEUE: url.clicks.v1
+      RABBITMQ_EXCHANGE: analytics.events
+      RABBITMQ_ROUTING_KEY: url.click
+      RABBITMQ_PREFETCH: 50
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - linklet_net
+
+networks:
+  linklet_net:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:
+  rabbitmq_data:

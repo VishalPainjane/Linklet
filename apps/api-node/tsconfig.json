@@ -1,0 +1,23 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "composite": true
+  },
+  "references": [
+    { "path": "../../packages/shared-types" },
+    { "path": "../../packages/code-generator" },
+    { "path": "../../packages/validation" },
+    { "path": "../../packages/cache" },
+    { "path": "../../packages/events" },
+    { "path": "../../packages/rate-limiter" },
+    { "path": "../../packages/database" },
+    { "path": "../../packages/core" },
+    { "path": "../../adapters/postgres-node" },
+    { "path": "../../adapters/redis-node" },
+    { "path": "../../adapters/rabbitmq" }
+  ],
+  "include": ["src/**/*"]
+}
+

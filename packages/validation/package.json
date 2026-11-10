@@ -1,0 +1,22 @@
+{
+  "name": "@linklet/validation",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -b",
+    "test": "vitest run",
+    "clean": "node -e \"fs.rmSync('dist', { recursive: true, force: true })\""
+  },
+  "dependencies": {
+    "@linklet/shared-types": "workspace:*",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "fast-check": "^3.23.2",
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.5"
+  }
+}
+
