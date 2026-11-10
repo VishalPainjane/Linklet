@@ -24,7 +24,10 @@ def stop_workers() -> None:
 
 def main() -> None:
     env = os.environ.copy()
-    env["DATABASE_URL"] = env.get("DATABASE_URL", "sqlite+aiosqlite:///linklet_bench.db")
+    env["DATABASE_URL"] = env.get(
+        "DATABASE_URL",
+        "postgresql+asyncpg://linklet:local-only-change-me@localhost:5432/linklet",
+    )
     repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
     backend_dir = os.path.join(repo_root, "backend")
 
@@ -84,3 +87,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+

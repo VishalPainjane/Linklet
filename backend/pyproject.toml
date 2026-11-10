@@ -21,7 +21,6 @@ build-backend = "uv_build"
 
 [dependency-groups]
 dev = [
-    "aiosqlite>=0.22.1",
     "httpx>=0.28.1",
     "hypothesis>=6.170.15",
     "mypy>=2.4.1",

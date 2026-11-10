@@ -1,33 +1,16 @@
 {
-  "name": "linklet-monorepo",
-  "version": "1.0.0",
+  "name": "linklet",
+  "version": "2.0.0",
   "private": true,
   "description": "Production-grade, systems-engineered URL shortener and concurrency lab",
-  "packageManager": "pnpm@12.18.0",
   "scripts": {
-    "build": "pnpm -r --filter=!./testing/* run build",
-    "typecheck": "tsc -b",
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "test:unit": "vitest run --dir packages testing/unit",
-    "test:integration": "vitest run --dir testing/integration",
-    "test:concurrency": "vitest run --dir testing/concurrency",
-    "docker:up": "docker compose up -d",
-    "docker:down": "docker compose down",
-    "docker:logs": "docker compose logs -f",
-    "db:migrate": "pnpm --filter @linklet/database run migrate",
-    "dev:api": "pnpm --filter @linklet/api-node run dev",
-    "dev:consumer": "pnpm --filter @linklet/queue-consumer-node run dev",
-    "dev:web": "pnpm --filter @linklet/web run dev",
-    "build:web": "pnpm --filter @linklet/web run build",
-    "bench": "pnpm --filter @linklet/load-generator run bench"
-  },
-  "devDependencies": {
-    "@types/node": "^22.13.0",
-    "fast-check": "^3.23.2",
-    "tsx": "^4.19.3",
-    "typescript": "^5.7.3",
-    "vitest": "^3.0.5"
+    "dev:frontend": "pnpm --dir frontend dev",
+    "build:frontend": "pnpm --dir frontend build",
+    "dev:backend": "cd backend && uv run uvicorn linklet.main:app --reload",
+    "test:backend": "cd backend && uv run pytest",
+    "lint:backend": "cd backend && uv run ruff check .",
+    "docker:up": "docker compose -f infrastructure/docker-compose.yml up -d",
+    "docker:down": "docker compose -f infrastructure/docker-compose.yml down",
+    "docker:logs": "docker compose -f infrastructure/docker-compose.yml logs -f"
   }
 }
-

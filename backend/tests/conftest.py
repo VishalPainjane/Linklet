@@ -1,7 +1,7 @@
 """Pytest configuration and async fixtures."""
 
+import os
 from collections.abc import AsyncIterator
-from pathlib import Path
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import (
 )
 
 from linklet.cache.local_lru import LocalUrlCacheAdapter
+from linklet.config import settings
 from linklet.main import create_app
 from linklet.messaging.publisher import MockEventPublisher
 from linklet.models.base import Base
@@ -24,18 +25,42 @@ def anyio_backend() -> str:
 
 
 @pytest.fixture
-async def test_engine(tmp_path: Path) -> AsyncIterator[AsyncEngine]:
-    """Provide an isolated temporary file-based SQLite async engine with concurrency support."""
-    db_file = tmp_path / "test_linklet.db"
+async def test_engine() -> AsyncIterator[AsyncEngine]:
+    """Provide a PostgreSQL async engine with connection pooling for testing."""
+    target_url = os.environ.get("TEST_DATABASE_URL", settings.database_url)
+    if target_url.startswith("postgres://"):
+        target_url = target_url.replace("postgres://", "postgresql+asyncpg://", 1)
+    elif target_url.startswith("postgresql://") and not target_url.startswith(
+        "postgresql+asyncpg://"
+    ):
+        target_url = target_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+
     engine = create_async_engine(
-        f"sqlite+aiosqlite:///{db_file}",
-        connect_args={"timeout": 30.0},
+        target_url,
+        pool_size=5,
+        max_overflow=2,
+        pool_timeout=2.0,
         echo=False,
     )
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+
+    try:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+    except Exception as exc:
+        await engine.dispose()
+        pytest.skip(
+            f"PostgreSQL unavailable at {target_url} ({exc}). "
+            "Start PostgreSQL with 'docker compose -f infrastructure/docker-compose.yml up -d' "
+            "to run database integration tests."
+        )
 
     yield engine
+
+    try:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.drop_all)
+    except Exception:
+        pass
     await engine.dispose()
 
 

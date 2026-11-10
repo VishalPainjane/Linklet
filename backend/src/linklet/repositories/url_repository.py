@@ -1,12 +1,10 @@
 """PostgreSQL repository for URL entity operations using SQLAlchemy 2.x."""
 
 from datetime import datetime
-from typing import Any
 from uuid import UUID
 
 from sqlalchemy import delete, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
-from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from linklet.errors import (
@@ -16,14 +14,6 @@ from linklet.errors import (
 from linklet.models.analytics import UrlStats
 from linklet.models.url import URL
 from linklet.services.code_generator import CodeGenerator, default_code_generator
-
-
-def get_insert_stmt(table: Any, session: AsyncSession) -> Any:
-    """Return dialect-appropriate INSERT statement with ON CONFLICT support."""
-    bind = session.bind
-    if bind is not None and bind.dialect.name == "sqlite":
-        return sqlite_insert(table)
-    return pg_insert(table)
 
 
 class UrlRepository:
@@ -55,7 +45,7 @@ class UrlRepository:
             candidate = self.code_gen.generate()
             # PostgreSQL atomic INSERT ... ON CONFLICT DO NOTHING RETURNING
             stmt = (
-                get_insert_stmt(URL, self.session)
+                pg_insert(URL)
                 .values(
                     code=candidate,
                     destination_url=destination_url,
@@ -72,7 +62,7 @@ class UrlRepository:
             if inserted_code is not None:
                 # Initialize empty stats record
                 stats_stmt = (
-                    get_insert_stmt(UrlStats, self.session)
+                    pg_insert(UrlStats)
                     .values(code=inserted_code, click_count=0)
                     .on_conflict_do_nothing(index_elements=[UrlStats.code])
                 )
@@ -96,7 +86,7 @@ class UrlRepository:
     ) -> URL:
         """Claim a custom alias atomically. Fails with 409 if claimed by another row."""
         stmt = (
-            get_insert_stmt(URL, self.session)
+            pg_insert(URL)
             .values(
                 code=alias,
                 destination_url=destination_url,
@@ -115,7 +105,7 @@ class UrlRepository:
 
         # Initialize empty stats record
         stats_stmt = (
-            get_insert_stmt(UrlStats, self.session)
+            pg_insert(UrlStats)
             .values(code=alias, click_count=0)
             .on_conflict_do_nothing(index_elements=[UrlStats.code])
         )

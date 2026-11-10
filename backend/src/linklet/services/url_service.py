@@ -9,6 +9,7 @@ from typing import Any
 from uuid import UUID
 
 from sqlalchemy import select, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from linklet.cache.interface import UrlCache
@@ -18,7 +19,7 @@ from linklet.errors import (
     UrlNotFoundError,
 )
 from linklet.models.idempotency import IdempotencyKey
-from linklet.repositories.url_repository import UrlRepository, get_insert_stmt
+from linklet.repositories.url_repository import UrlRepository
 from linklet.schemas.url import (
     CreateUrlRequest,
     CreateUrlResponse,
@@ -67,7 +68,7 @@ class UrlService:
             expires_at = now + timedelta(days=7)
             # 1. Attempt to claim the idempotency key first atomically
             claim_stmt = (
-                get_insert_stmt(IdempotencyKey, self.session)
+                pg_insert(IdempotencyKey)
                 .values(
                     principal_key=principal_key,
                     idempotency_key=idempotency_key,

@@ -20,7 +20,6 @@ from linklet.messaging.publisher import (
     MockEventPublisher,
 )
 from linklet.messaging.rabbitmq import RabbitMQTopology
-from linklet.models import Base
 from linklet.workers.click_consumer import ClickConsumer
 
 logging.basicConfig(
@@ -45,10 +44,6 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.engine = engine
         app.state.session_factory = session_factory
         own_engine = True
-
-    if engine and str(engine.url).startswith("sqlite"):
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
 
     # 2. Redis Cache
     redis_client: Redis | None = None
