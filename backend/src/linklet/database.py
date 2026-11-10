@@ -28,7 +28,11 @@ def create_engine_and_session_factory(
 
     # SQLite compatibility for fast memory/unit testing if needed
     if target_url.startswith("sqlite"):
-        engine = create_async_engine(target_url, echo=settings.db_echo)
+        engine = create_async_engine(
+            target_url,
+            connect_args={"timeout": 30.0},
+            echo=settings.db_echo,
+        )
     else:
         engine = create_async_engine(
             target_url,

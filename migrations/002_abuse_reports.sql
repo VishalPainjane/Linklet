@@ -12,3 +12,4 @@ CREATE TABLE IF NOT EXISTS abuse_reports (
 
 CREATE INDEX IF NOT EXISTS abuse_reports_code_idx
     ON abuse_reports (code, reported_at DESC);
+

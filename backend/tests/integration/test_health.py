@@ -20,3 +20,4 @@ async def test_readiness_probe(test_client: AsyncClient) -> None:
     data = res.json()
     assert data["status"] == "ready"
     assert data["dependencies"]["postgres"] == "healthy"
+

@@ -35,3 +35,4 @@ class UrlCache(Protocol):
     async def delete(self, code: str) -> None:
         """Invalidate URL in cache."""
         ...
+

@@ -77,3 +77,4 @@ async def redirect_head(
         status_code=status.HTTP_302_FOUND,
         headers=headers,
     )
+

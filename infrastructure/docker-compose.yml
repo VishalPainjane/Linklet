@@ -61,3 +61,4 @@ volumes:
 networks:
   linklet_net:
     driver: bridge
+

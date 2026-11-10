@@ -25,3 +25,4 @@ class CreateOnlyUser(HttpUser):
                 response.success()
             else:
                 response.failure(f"Status {response.status_code}")
+

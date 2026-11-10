@@ -90,3 +90,4 @@ async def get_url_stats(
     """Retrieve aggregate click analytics for a short URL."""
     service = AnalyticsService(session=session)
     return await service.get_stats(code)
+

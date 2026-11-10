@@ -89,3 +89,4 @@ async def test_collision_retry_exhaustion_raises_dependency_error(
             destination_url="https://example.com/fail",
             max_retries=3,
         )
+

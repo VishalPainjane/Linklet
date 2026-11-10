@@ -45,3 +45,4 @@ class DeterministicSequenceCodeGenerator:
 
 
 default_code_generator = Base62CodeGenerator()
+

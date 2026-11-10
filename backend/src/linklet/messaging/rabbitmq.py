@@ -77,3 +77,4 @@ class RabbitMQTopology:
         if self.connection and not self.connection.is_closed:
             await self.connection.close()
         logger.info("RabbitMQ connection closed.")
+

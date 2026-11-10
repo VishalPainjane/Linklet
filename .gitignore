@@ -50,5 +50,9 @@ coverage/
 # Persistent data volumes (if local bind mounted)
 data/
 results/
+*.db
+*.sqlite
+*.sqlite3
+
 
 

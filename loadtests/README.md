@@ -47,3 +47,4 @@ Start Worker(s):
 ```bash
 python -m uv run locust -f ../loadtests/locustfile.py --worker --master-host localhost
 ```
+

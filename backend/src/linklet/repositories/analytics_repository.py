@@ -17,3 +17,4 @@ class AnalyticsRepository:
         stmt = select(UrlStats).where(UrlStats.code == code)
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
+

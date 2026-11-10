@@ -97,3 +97,4 @@ async def test_disable_url(test_client: AsyncClient) -> None:
     meta = await test_client.get("/api/v1/urls/to-disable")
     assert meta.status_code == 200
     assert meta.json()["is_active"] is False
+

@@ -1,26 +1,46 @@
 """Locust load test suite for Linklet systems engineering benchmarks."""
 
+import json
 import os
 import random
-from locust import HttpUser, between, task
+import urllib.request
+from locust import HttpUser, between, events, task
 
 SEED_CODE = os.environ.get("SHORT_CODE", "seedCode1")
+ACTIVE_CODES: list[str] = [SEED_CODE]
+
+
+@events.test_start.add_listener
+def on_test_start(environment, **kwargs) -> None:  # type: ignore[no-untyped-def]
+    """Pre-seed the initial short URL so redirect tests hit 302 Found immediately."""
+    host = environment.host or "http://localhost:8000"
+    payload = {
+        "url": "https://example.com/systems-engineering-lab",
+        "customAlias": SEED_CODE,
+    }
+    try:
+        req = urllib.request.Request(
+            f"{host.rstrip('/')}/api/v1/urls",
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+        )
+        urllib.request.urlopen(req, timeout=5.0)
+    except Exception:
+        # Link may already exist or will be generated on first create
+        pass
 
 
 class LinkletUser(HttpUser):
     """Models a representative mixed traffic workload (99% Redirect Read, 1% Create Write)."""
 
-    wait_time = between(0.05, 0.2)
-
-    def on_start(self) -> None:
-        """Seed a short URL for this virtual user session if needed."""
-        self.code = SEED_CODE
+    wait_time = between(0.01, 0.05)
 
     @task(99)
     def redirect(self) -> None:
         """Simulates 99% read traffic hitting the short link redirect endpoint."""
+        target_code = random.choice(ACTIVE_CODES)
         with self.client.get(
-            f"/{self.code}",
+            f"/{target_code}",
             name="GET /{code}",
             allow_redirects=False,
             catch_response=True,
@@ -31,10 +51,9 @@ class LinkletUser(HttpUser):
                 else:
                     response.failure("Missing Location header in 302 redirect")
             elif response.status_code in (404, 410):
-                # Valid HTTP responses for non-existent/expired codes
                 response.success()
             else:
-                response.failure(f"Unexpected status code: {response.status_code}")
+                response.failure(f"Unexpected redirect status: {response.status_code}")
 
     @task(1)
     def create(self) -> None:
@@ -49,12 +68,16 @@ class LinkletUser(HttpUser):
         ) as response:
             if response.status_code == 201:
                 data = response.json()
-                if "code" in data and "short_url" in data:
+                code = data.get("code")
+                if code and "short_url" in data:
+                    ACTIVE_CODES.append(code)
+                    if len(ACTIVE_CODES) > 500:
+                        ACTIVE_CODES.pop(1)
                     response.success()
                 else:
                     response.failure("Response missing code or short_url")
             elif response.status_code == 429:
-                # Rate limit encountered
+                # Rate limited under burst
                 response.success()
             else:
                 response.failure(f"Creation failed with status: {response.status_code}")

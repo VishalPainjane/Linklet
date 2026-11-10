@@ -20,6 +20,7 @@ from linklet.messaging.publisher import (
     MockEventPublisher,
 )
 from linklet.messaging.rabbitmq import RabbitMQTopology
+from linklet.models import Base
 from linklet.workers.click_consumer import ClickConsumer
 
 logging.basicConfig(
@@ -45,27 +46,38 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.session_factory = session_factory
         own_engine = True
 
+    if engine and str(engine.url).startswith("sqlite"):
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+
     # 2. Redis Cache
     redis_client: Redis | None = None
     if not hasattr(app.state, "cache"):
         try:
-            redis_client = Redis.from_url(
+            candidate_redis = Redis.from_url(
                 settings.redis_url,
                 decode_responses=True,
-                socket_connect_timeout=2.0,
-                socket_timeout=2.0,
+                socket_connect_timeout=0.5,
+                socket_timeout=0.5,
                 health_check_interval=30,
                 max_connections=settings.redis_max_connections,
             )
+            # Verify connectivity immediately
+            import asyncio
+            await asyncio.wait_for(candidate_redis.ping(), timeout=0.5)
+            redis_client = candidate_redis
             app.state.redis = redis_client
             app.state.cache = RedisUrlCache(redis_client)
             logger.info("Connected to Redis at %s", settings.redis_url)
         except Exception as exc:
-            logger.warning(
-                "Could not connect to Redis (%s); falling back to in-memory LRU cache.",
+            if redis_client:
+                await redis_client.aclose()
+                redis_client = None
+            logger.info(
+                "Redis unavailable (%s); using high-performance in-process O(1) LRU cache.",
                 exc,
             )
-            app.state.cache = LocalUrlCacheAdapter(capacity=5000)
+            app.state.cache = LocalUrlCacheAdapter(capacity=50000)
 
     # 3. RabbitMQ Topology & Publisher
     topology: RabbitMQTopology | None = None

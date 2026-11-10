@@ -22,3 +22,4 @@ The Linklet platform was initially conceived as an Express/TypeScript proof-of-c
 - Full type safety verified statically via `mypy --strict` and formatted with `ruff`.
 - 100% test coverage spanning unit, property-based (`hypothesis`), async integration (`httpx`), and concurrent race tests.
 - Clean isolation between API process, message broker, and consumer daemons.
+
