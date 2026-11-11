@@ -1,77 +1,178 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { checkApiHealth, API_BASE_URL } from "../lib/api";
-import { Activity, ShieldCheck, Terminal, ExternalLink } from "lucide-react";
+import { useState } from "react";
+import { logoutUser, type AuthUser } from "../lib/api";
+import {
+  Link2,
+  Activity,
+  Layers,
+  BarChart3,
+  LogOut,
+  User,
+  ChevronDown,
+  Github,
+} from "lucide-react";
 
-export function Header() {
-  const [isOnline, setIsOnline] = useState<boolean | null>(null);
+interface HeaderProps {
+  currentUser: AuthUser | null;
+  activeTab: "links" | "analytics" | "latency";
+  onTabChange: (tab: "links" | "analytics" | "latency") => void;
+  onOpenAuth: (mode?: "signin" | "signup") => void;
+  onLogout: () => void;
+  onScrollToFeatures?: () => void;
+}
 
-  useEffect(() => {
-    let mounted = true;
-    const check = async () => {
-      const ok = await checkApiHealth();
-      if (mounted) setIsOnline(ok);
-    };
+export function Header({
+  currentUser,
+  activeTab,
+  onTabChange,
+  onOpenAuth,
+  onLogout,
+  onScrollToFeatures,
+}: HeaderProps) {
+  const [userDropdownOpen, setUserDropdownOpen] = useState(false);
 
-    check();
-    const interval = setInterval(check, 10000);
-    return () => {
-      mounted = false;
-      clearInterval(interval);
-    };
-  }, []);
+  const handleLogout = async () => {
+    await logoutUser();
+    setUserDropdownOpen(false);
+    onLogout();
+  };
 
   return (
-    <header className="border-b border-slate-800/80 bg-slate-950/60 backdrop-blur-md sticky top-0 z-50">
-      <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center shadow-lg shadow-indigo-500/20">
-            <Terminal className="w-5 h-5 text-white" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="font-bold text-lg text-white tracking-tight">Linklet</span>
-              <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-950/80 text-indigo-400 border border-indigo-800/50 font-mono">
-                v1.0
-              </span>
+    <header className="border-b border-zinc-800/80 bg-zinc-950/80 backdrop-blur-md sticky top-0 z-40">
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
+        {/* Brand */}
+        <div className="flex items-center gap-6">
+          <div className="flex items-center gap-2.5 cursor-pointer" onClick={() => onTabChange("links")}>
+            <div className="w-8 h-8 rounded-xl bg-indigo-600 flex items-center justify-center shadow-md shadow-indigo-600/20">
+              <Link2 className="w-4 h-4 text-white" />
             </div>
-            <p className="text-[11px] text-slate-400">Systems-Engineered URL Shortener</p>
+            <span className="font-bold text-base tracking-tight text-white">Linklet</span>
           </div>
+
+          {/* Navigation for Logged-In Users */}
+          {currentUser && (
+            <nav className="hidden sm:flex items-center gap-1 p-1 bg-zinc-900/60 border border-zinc-800 rounded-xl">
+              <button
+                onClick={() => onTabChange("links")}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition ${
+                  activeTab === "links"
+                    ? "bg-zinc-800 text-white"
+                    : "text-zinc-400 hover:text-zinc-200"
+                }`}
+              >
+                <Layers className="w-3.5 h-3.5" />
+                <span>Links</span>
+              </button>
+
+              <button
+                onClick={() => onTabChange("analytics")}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition ${
+                  activeTab === "analytics"
+                    ? "bg-zinc-800 text-white"
+                    : "text-zinc-400 hover:text-zinc-200"
+                }`}
+              >
+                <BarChart3 className="w-3.5 h-3.5" />
+                <span>Analytics</span>
+              </button>
+
+              <button
+                onClick={() => onTabChange("latency")}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition ${
+                  activeTab === "latency"
+                    ? "bg-zinc-800 text-white"
+                    : "text-zinc-400 hover:text-zinc-200"
+                }`}
+              >
+                <Activity className="w-3.5 h-3.5" />
+                <span>Latency Lab</span>
+              </button>
+            </nav>
+          )}
+
+          {/* Navigation for Guests (Marketing) */}
+          {!currentUser && (
+            <nav className="hidden md:flex items-center gap-6 text-xs text-zinc-400">
+              <button
+                onClick={onScrollToFeatures}
+                className="hover:text-zinc-200 transition"
+              >
+                Features
+              </button>
+              <a
+                href="http://localhost:8000/docs"
+                target="_blank"
+                rel="noreferrer"
+                className="hover:text-zinc-200 transition"
+              >
+                API Docs
+              </a>
+              <a
+                href="https://github.com/VishalPainjane/Linklet"
+                target="_blank"
+                rel="noreferrer"
+                className="flex items-center gap-1 hover:text-zinc-200 transition"
+              >
+                <Github className="w-3.5 h-3.5" />
+                <span>GitHub</span>
+              </a>
+            </nav>
+          )}
         </div>
 
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-900 border border-slate-800 text-xs font-mono">
-            <span
-              className={`w-2 h-2 rounded-full ${
-                isOnline === true
-                  ? "bg-emerald-400 animate-pulse"
-                  : isOnline === false
-                  ? "bg-rose-500"
-                  : "bg-amber-400"
-              }`}
-            />
-            <span className="text-slate-300">
-              {isOnline === true
-                ? "Backend Ready"
-                : isOnline === false
-                ? "Backend Disconnected"
-                : "Probing API..."}
-            </span>
-          </div>
+        {/* Right Section: Auth State */}
+        <div className="flex items-center gap-3">
+          {currentUser ? (
+            <div className="relative">
+              <button
+                onClick={() => setUserDropdownOpen(!userDropdownOpen)}
+                className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-zinc-900 border border-zinc-800 hover:border-zinc-700 transition text-xs text-zinc-200"
+              >
+                <div className="w-5 h-5 rounded-full bg-indigo-600/30 text-indigo-400 border border-indigo-500/40 flex items-center justify-center font-bold text-[10px]">
+                  {currentUser.email ? currentUser.email.charAt(0).toUpperCase() : "U"}
+                </div>
+                <span className="max-w-[140px] truncate font-medium">
+                  {currentUser.email}
+                </span>
+                <ChevronDown className="w-3.5 h-3.5 text-zinc-500" />
+              </button>
 
-          <a
-            href="https://github.com/nikhilds/Linklet"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-xs text-slate-400 hover:text-white transition flex items-center gap-1 hover:underline"
-          >
-            GitHub
-            <ExternalLink className="w-3 h-3" />
-          </a>
+              {userDropdownOpen && (
+                <div className="absolute right-0 mt-2 w-52 rounded-xl bg-zinc-900 border border-zinc-800 shadow-xl p-1.5 text-xs text-zinc-200 animate-fade-in z-50">
+                  <div className="px-3 py-2 border-b border-zinc-800/80 mb-1">
+                    <p className="text-[10px] uppercase font-mono text-zinc-500">Signed in as</p>
+                    <p className="font-semibold text-white truncate">{currentUser.email}</p>
+                  </div>
+
+                  <button
+                    onClick={handleLogout}
+                    className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-rose-400 hover:bg-rose-950/40 transition text-left"
+                  >
+                    <LogOut className="w-3.5 h-3.5" />
+                    <span>Sign Out</span>
+                  </button>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => onOpenAuth("signin")}
+                className="px-3.5 py-1.5 rounded-xl text-xs font-medium text-zinc-300 hover:text-white hover:bg-zinc-900 border border-transparent hover:border-zinc-800 transition"
+              >
+                Sign In
+              </button>
+              <button
+                onClick={() => onOpenAuth("signup")}
+                className="px-3.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-xs transition shadow-sm"
+              >
+                Sign Up
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </header>
   );
 }
-
