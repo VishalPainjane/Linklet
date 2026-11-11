@@ -1,7 +1,6 @@
 """Application configuration loaded via pydantic-settings."""
 
 import json
-from typing import Any
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -26,24 +25,27 @@ class Settings(BaseSettings):
         default="http://localhost:8000",
         description="Public base URL for generated short links (e.g. https://linklet.onrender.com)",
     )
-    allowed_cors_origins: list[str] = Field(
+    allowed_cors_origins: str | list[str] = Field(
         default=["http://localhost:3000", "http://localhost:3001", "http://127.0.0.1:3000"]
     )
 
-    @field_validator("allowed_cors_origins", mode="before")
+    @field_validator("allowed_cors_origins", mode="after")
     @classmethod
-    def parse_cors_origins(cls, v: Any) -> list[str]:
+    def parse_cors_origins(cls, v: str | list[str]) -> list[str]:
         if isinstance(v, str):
             v = v.strip()
+            if v == "*":
+                return ["*"]
             if v.startswith("[") and v.endswith("]"):
                 try:
-                    parsed: list[str] = json.loads(v)
-                    return parsed
+                    parsed = json.loads(v)
+                    if isinstance(parsed, list):
+                        return [str(origin).strip() for origin in parsed if str(origin).strip()]
                 except Exception:
                     pass
             return [origin.strip() for origin in v.split(",") if origin.strip()]
         if isinstance(v, list):
-            return v
+            return [str(origin).strip() for origin in v if str(origin).strip()]
         return ["*"]
 
 

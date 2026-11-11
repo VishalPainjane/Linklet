@@ -3,10 +3,11 @@ from logging.config import fileConfig
 
 from sqlalchemy import pool
 from sqlalchemy.engine import Connection
-from sqlalchemy.ext.asyncio import async_engine_from_config
+from sqlalchemy.ext.asyncio import create_async_engine
 
 from alembic import context
 from linklet.config import settings
+from linklet.database import normalize_database_url
 from linklet.models import Base
 
 # this is the Alembic Config object, which provides
@@ -23,12 +24,9 @@ if config.config_file_name is not None:
 target_metadata = Base.metadata
 
 # Set sqlalchemy.url from Linklet settings dynamically
-db_url = settings.direct_database_url or settings.database_url
-if db_url.startswith("postgres://"):
-    db_url = db_url.replace("postgres://", "postgresql+asyncpg://", 1)
-elif db_url.startswith("postgresql://") and not db_url.startswith("postgresql+asyncpg://"):
-    db_url = db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
-config.set_main_option("sqlalchemy.url", db_url)
+raw_db_url = settings.direct_database_url or settings.database_url
+clean_db_url, db_connect_args = normalize_database_url(raw_db_url)
+config.set_main_option("sqlalchemy.url", clean_db_url)
 
 # other values from the config, defined by the needs of env.py,
 # can be acquired:
@@ -72,11 +70,13 @@ async def run_async_migrations() -> None:
     and associate a connection with the context.
 
     """
+    raw_url = settings.direct_database_url or settings.database_url
+    clean_url, extra_connect_args = normalize_database_url(raw_url)
 
-    connectable = async_engine_from_config(
-        config.get_section(config.config_ini_section, {}),
-        prefix="sqlalchemy.",
+    connectable = create_async_engine(
+        clean_url,
         poolclass=pool.NullPool,
+        connect_args=extra_connect_args,
     )
 
     async with connectable.connect() as connection:
