@@ -26,7 +26,12 @@ class Settings(BaseSettings):
         description="Public base URL for generated short links (e.g. https://linklet.onrender.com)",
     )
     allowed_cors_origins: str | list[str] = Field(
-        default=["http://localhost:3000", "http://localhost:3001", "http://127.0.0.1:3000"]
+        default=[
+            "http://localhost:3000",
+            "http://localhost:3001",
+            "http://127.0.0.1:3000",
+            "https://linklet-six.vercel.app",
+        ]
     )
 
     @field_validator("allowed_cors_origins", mode="after")
