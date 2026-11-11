@@ -6,14 +6,13 @@
 
 [![CI Pipeline](https://github.com/VishalPainjane/Linklet/actions/workflows/ci.yml/badge.svg)](https://github.com/VishalPainjane/Linklet/actions/workflows/ci.yml)
 [![Live Frontend](https://img.shields.io/badge/Frontend-Vercel-black?logo=vercel)](https://linklet-six.vercel.app)
-[![Live Backend](https://img.shields.io/badge/Backend-Render-46E3B7?logo=render)](https://linklet-api-ikru.onrender.com/docs)
+[![Backend](https://img.shields.io/badge/Backend-FastAPI-009688?logo=fastapi)](backend/)
 [![Database](https://img.shields.io/badge/Database-Neon%20Postgres-00E599?logo=postgresql)](https://neon.tech)
 [![Python](https://img.shields.io/badge/Python-3.12-3776AB?logo=python)](https://python.org)
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.162-009688?logo=fastapi)](https://fastapi.tiangolo.com)
 [![Next.js](https://img.shields.io/badge/Next.js-15-black?logo=next.js)](https://nextjs.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-[**Explore Live App**](https://linklet-six.vercel.app) • [**Interactive Swagger API**](https://linklet-api-ikru.onrender.com/docs) • [**Architecture Blueprint**](docs/ENGINEERING_BLUEPRINT.md)
+[**Explore Live App**](https://linklet-six.vercel.app) • [**Architecture Blueprint**](docs/ENGINEERING_BLUEPRINT.md) • [**GitHub Repository**](https://github.com/VishalPainjane/Linklet)
 
 </div>
 
@@ -23,12 +22,11 @@
 
 Linklet is an industrial-strength, distributed URL shortener engineered to explore and solve real-world systems challenges: **high-concurrency race conditions**, **cache stampedes (dogpiling)**, **asynchronous click telemetry**, **transactional cache invalidation**, and **tail-latency profiling** under saturated load.
 
-Unlike trivial URL shorteners that lock a relational database synchronously on every redirect, Linklet achieves **sub-15ms server-side p50 redirects** by coupling **Redis 7** cache-aside with SingleFlight stampede collapse, streaming click events to **RabbitMQ 4**, and applying an **ACID Transactional Outbox pattern** to guarantee zero cache drift.
+Unlike trivial URL shorteners that lock a relational database synchronously on every redirect, Linklet achieves **sub-17ms server-side p50 redirects at 2,000+ req/s** by coupling **Redis 7** cache-aside with SingleFlight stampede collapse, streaming click events to **RabbitMQ 4**, and applying an **ACID Transactional Outbox pattern** to guarantee zero cache drift.
 
-### Live Deployments
+### Live Production Deployments
 
 - **Web Application (Vercel):** [https://linklet-six.vercel.app](https://linklet-six.vercel.app)
-- **REST API & OpenAPI Docs (Render):** [https://linklet-api-ikru.onrender.com/docs](https://linklet-api-ikru.onrender.com/docs)
 - **Database (Neon Serverless):** PostgreSQL 18 with connection pooling, autoscaling, and libpq SSL normalization.
 - **GitHub Repository:** [https://github.com/VishalPainjane/Linklet](https://github.com/VishalPainjane/Linklet)
 
@@ -48,7 +46,7 @@ Unlike trivial URL shorteners that lock a relational database synchronously on e
 │                                                                                        │
 │  ┌───────────────────────┐  SingleFlight  ┌─────────────────────────────────────────┐  │
 │  │   GET /{code}         ├───────────────►│ Redis 7 Distributed Cache               │  │
-│  │   Sub-15ms Redirect   │                │ • url:{code} (15m TTL)                  │  │
+│  │   Sub-17ms Redirect   │                │ • url:{code} (15m TTL)                  │  │
 │  └───────────┬───────────┘                │ • tombstone:{code} (410 Gone, 1h TTL)   │  │
 │              │                            │ • session:{token} (7d TTL)              │  │
 │              │ Async                      └─────────────────────────────────────────┘  │
@@ -135,24 +133,65 @@ The frontend is a modern, responsive web application built with Next.js 15 App R
 
 ---
 
-## 6. Performance Benchmarks
+## 6. Performance & Stress Testing Benchmarks
 
-Stress tests were conducted using [Locust](https://locust.io) across high-concurrency read/write scenarios:
+Performance was rigorously benchmarked using [Locust](https://locust.io) across high-concurrency read/write scenarios against a 4-worker FastAPI cluster backed by PostgreSQL 17, Redis 7, and RabbitMQ 4.
 
+### 6.1 Controlled Sustained Load Diagnostic (500 Virtual Users)
+
+To isolate true server processing time from client-side socket queueing and redirect-following skew, the server was instrumented with a **pure-ASGI response timing middleware** measuring exact frame write duration (`await send(body)`):
+
+- **Workload Concurrency:** 500 virtual users (FastHttpUser, 30-second duration)
+- **Total Requests Processed:** **58,145 requests**
+- **Sustained Throughput:** **2,002.1 req/s**
+- **Success Rate:** **99.998%** (58,144 out of 58,145 succeeded)
+
+#### Server-Side Latency Distribution (Pure ASGI Middleware)
+
+| Metric | Server Latency | Locust Client Latency |
+| :--- | :--- | :--- |
+| **Median (p50)** | **16.7 ms** | 150.0 ms |
+| **90th Percentile (p90)** | **42.2 ms** | 220.0 ms |
+| **95th Percentile (p95)** | **61.7 ms** | 240.0 ms |
+| **99th Percentile (p99)** | **97.4 ms** | 1,400.0 ms |
+| **Maximum** | **244.0 ms** | 3,026.7 ms |
+
+```text
+Pure ASGI Server Latency Histogram (58,145 Total Requests):
+  <= 10 ms:    [##########          ]   8,460 reqs (14.5%)
+  <= 25 ms:    [####################]  37,742 reqs (64.9%)  -->  79.4% <= 25ms
+  <= 50 ms:    [########            ]   7,419 reqs (12.8%)  -->  92.2% <= 50ms
+  <= 100 ms:   [####                ]   4,042 reqs ( 7.0%)  -->  99.2% <= 100ms
+  <= 250 ms:   [#                   ]     482 reqs ( 0.8%)
+  >  250 ms:   [                    ]       0 reqs ( 0.0%)
 ```
-================================================================================
-Linklet Sustained Benchmark Results (1,000 Concurrent Users)
-================================================================================
-Endpoints: GET /{code} (99%), POST /api/v1/urls (1%)
-Server Response Timing (Pure ASGI Middleware):
-  • Requests <= 10ms:  94.2%
-  • Requests <= 25ms:   4.9%
-  • Requests <= 50ms:   0.8%
-  • Median Latency (p50): 13.2 ms
-  • 99th Percentile (p99): 24.8 ms
-  • Failure Rate: 0.00% (Zero dropped requests)
-================================================================================
-```
+
+- **99.17%** of all requests completed inside the server in **$< 100\text{ ms}$**.
+- **100.00%** of all requests completed inside the server in **$< 244\text{ ms}$**.
+- **Zero requests** exceeded $250\text{ ms}$ across all four Uvicorn worker processes.
+
+### 6.2 SQLite vs. PostgreSQL 17 Write Contention (`POST /api/v1/urls`)
+
+During initial baseline benchmarks with SQLite, concurrent writes experienced severe lock contention due to SQLite's file-exclusive write lock. Replacing SQLite with PostgreSQL 17 row-level concurrency completely eliminated this bottleneck:
+
+| Concurrency Level | SQLite Single Writer (Baseline) | PostgreSQL 17 + asyncpg | Improvement Factor |
+| :--- | :--- | :--- | :--- |
+| **50 Concurrent Users** | 37 ms median | **15 ms median** | **2.5x faster** |
+| **250 Concurrent Users** | 730 ms median | **130 ms median** | **5.6x faster** |
+| **500 Concurrent Users** | 4,900 ms median | **160 ms median** | **30.6x faster writes** |
+| **1,000 Concurrent Users** | 4,300 ms median | **160 ms median** | **26.8x faster writes** |
+| **1,000 Users (p90 Write)** | 9,600 ms p90 | **280 ms p90** | **34.3x reduction in write tail** |
+
+### 6.3 Per-Worker Load Distribution
+
+Across a 4-worker cluster under 500 concurrent users:
+
+| Worker Node | Process PID | Processed Requests | p50 | p95 | p99 | Max |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **Worker 8001** | PID 20028 | 14,547 reqs | 16.6 ms | 74.4 ms | 103.8 ms | 212.6 ms |
+| **Worker 8002** | PID 276 | 14,274 reqs | 16.2 ms | 50.6 ms | 91.7 ms | 244.0 ms |
+| **Worker 8003** | PID 20000 | 14,713 reqs | 17.4 ms | 64.8 ms | 91.8 ms | 172.4 ms |
+| **Worker 8004** | PID 35076 | 14,611 reqs | 16.7 ms | 56.8 ms | 93.3 ms | 241.0 ms |
 
 ---
 
@@ -186,7 +225,7 @@ Server Response Timing (Pure ASGI Middleware):
 | `HEAD` | `/{code}` | `302 Found` | Inspect redirect target headers without counting clicks |
 | `GET` | `/health` | `200 OK` | Health probe returning service readiness status |
 
-Interactive OpenAPI documentation is live at [https://linklet-api-ikru.onrender.com/docs](https://linklet-api-ikru.onrender.com/docs).
+Interactive OpenAPI (Swagger) documentation is available locally at `http://localhost:8000/docs`.
 
 ---
 
@@ -222,6 +261,8 @@ uv run alembic upgrade head
 # Start API server on port 8000
 uv run uvicorn linklet.main:app --reload --host 127.0.0.1 --port 8000
 ```
+
+Interactive Swagger API Documentation will be available at [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs).
 
 ### 3. Configure Frontend
 
@@ -272,7 +313,7 @@ uv run ruff check .
 
 1. Connect your repository on [Vercel](https://vercel.com) (Root Directory: `frontend`).
 2. **Environment Variables:**
-   - `NEXT_PUBLIC_API_BASE_URL`: `https://linklet-api-ikru.onrender.com`
+   - `NEXT_PUBLIC_API_BASE_URL`: Your backend URL (e.g. `https://<your-service>.onrender.com`)
    - `NEXT_PUBLIC_GOOGLE_CLIENT_ID`: Google OAuth 2.0 Client ID
 
 ### C. Google Cloud Console
