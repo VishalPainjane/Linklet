@@ -5,12 +5,13 @@ and atomic Lua rate limiter.
 import asyncio
 import json
 import logging
+import time
 from datetime import UTC, datetime
 from typing import Any
 
 from redis.asyncio import Redis
 
-from linklet.cache.interface import CachedUrl, UrlCache
+from linklet.cache.interface import CachedUrl, CacheEntryStatus, UrlCache
 from linklet.config import settings
 
 logger = logging.getLogger(__name__)
@@ -34,6 +35,11 @@ class RedisUrlCache(UrlCache):
         self._single_flight_locks: dict[str, asyncio.Lock] = {}
         self._meta_lock = asyncio.Lock()
         self._rate_limit_script = self.redis.register_script(RATE_LIMIT_LUA)
+        self._get_stats: dict[str, int] = {
+            "hits": 0,
+            "misses": 0,
+            "errors": 0,
+        }
 
     def _format_key(self, code: str) -> str:
         return f"url:{code}"
@@ -45,25 +51,105 @@ class RedisUrlCache(UrlCache):
                 self._single_flight_locks[code] = asyncio.Lock()
             return self._single_flight_locks[code]
 
+    def log_summary(self) -> None:
+        """Log cumulative cache statistics and connection pool utilization."""
+        pool = getattr(self.redis, "connection_pool", None)
+        in_use = len(getattr(pool, "_in_use_connections", [])) if pool else 0
+        avail = len(getattr(pool, "_available_connections", [])) if pool else 0
+        total_reqs = self._get_stats["hits"] + self._get_stats["misses"] + self._get_stats["errors"]
+        logger.warning(
+            "REDIS_GET_SUMMARY hits=%d misses=%d errors=%d total=%d in_use=%d avail=%d",
+            self._get_stats["hits"],
+            self._get_stats["misses"],
+            self._get_stats["errors"],
+            total_reqs,
+            in_use,
+            avail,
+        )
+
     async def get(self, code: str) -> CachedUrl | None:
-        """Fetch cached URL metadata. Returns None on cache miss or Redis error."""
+        """Fetch cached URL metadata with diagnostics."""
+        started = time.perf_counter()
+        redis_ms = 0.0
+        decode_ms = 0.0
+        outcome = "error"
         try:
+            redis_started = time.perf_counter()
             raw = await self.redis.get(self._format_key(code))
+            redis_ms = (time.perf_counter() - redis_started) * 1000
             if not raw:
+                outcome = "miss"
+                self._get_stats["misses"] += 1
                 return None
+            decode_started = time.perf_counter()
             data = json.loads(raw)
             expires_at = (
                 datetime.fromisoformat(data["expires_at"]) if data.get("expires_at") else None
             )
-            return CachedUrl(
-                code=data["code"],
-                destination_url=data["destination_url"],
+            raw_status = data.get("status")
+            if raw_status:
+                try:
+                    entry_status = CacheEntryStatus(raw_status)
+                except ValueError:
+                    entry_status = CacheEntryStatus.ACTIVE
+            else:
+                entry_status = (
+                    CacheEntryStatus.DELETED
+                    if data.get("disabled")
+                    else CacheEntryStatus.ACTIVE
+                )
+
+            cached = CachedUrl(
+                code=data.get("code", code),
+                destination_url=data.get("destination_url"),
                 expires_at=expires_at,
-                disabled=bool(data.get("disabled", False)),
+                disabled=bool(
+                    data.get("disabled", False) or entry_status == CacheEntryStatus.DELETED
+                ),
+                status=entry_status,
             )
+            decode_ms = (time.perf_counter() - decode_started) * 1000
+            outcome = "hit"
+            self._get_stats["hits"] += 1
+            return cached
         except Exception as exc:
-            logger.warning("Redis GET url:%s failed, falling back to database: %s", code, exc)
+            outcome = "error"
+            self._get_stats["errors"] += 1
+            pool = getattr(self.redis, "connection_pool", None)
+            in_use = len(getattr(pool, "_in_use_connections", [])) if pool else 0
+            avail = len(getattr(pool, "_available_connections", [])) if pool else 0
+            logger.warning(
+                "REDIS_GET_ERROR code=%s error_type=%s err=%s in_use=%d avail=%d redis_ms=%.2fms",
+                code,
+                type(exc).__name__,
+                exc,
+                in_use,
+                avail,
+                redis_ms,
+            )
             return None
+        finally:
+            total_ms = (time.perf_counter() - started) * 1000
+            if redis_ms > 10.0:
+                pool = getattr(self.redis, "connection_pool", None)
+                in_use = len(getattr(pool, "_in_use_connections", [])) if pool else 0
+                avail = len(getattr(pool, "_available_connections", [])) if pool else 0
+                logger.warning(
+                    "SLOW_REDIS_GET code=%s redis_ms=%.2fms decode_ms=%.2fms "
+                    "total_ms=%.2fms outcome=%s in_use=%d avail=%d",
+                    code,
+                    redis_ms,
+                    decode_ms,
+                    total_ms,
+                    outcome,
+                    in_use,
+                    avail,
+                )
+            total_reqs = (
+                self._get_stats["hits"] + self._get_stats["misses"] + self._get_stats["errors"]
+            )
+            if total_reqs > 0 and total_reqs % 1000 == 0:
+                self.log_summary()
 
     async def set(
         self,
@@ -95,6 +181,7 @@ class RedisUrlCache(UrlCache):
                 "destination_url": destination_url,
                 "expires_at": expires_at.isoformat() if expires_at else None,
                 "disabled": False,
+                "status": CacheEntryStatus.ACTIVE.value,
             }
             await self.redis.set(
                 self._format_key(code),
@@ -103,6 +190,36 @@ class RedisUrlCache(UrlCache):
             )
         except Exception as exc:
             logger.warning("Redis SET url:%s failed: %s", code, exc)
+
+    async def set_tombstone(
+        self,
+        code: str,
+        status: CacheEntryStatus,
+        ttl_seconds: int | None = None,
+    ) -> None:
+        """Cache negative lookup or tombstone (deleted, expired, not_found) with bounded TTL."""
+        try:
+            if ttl_seconds is not None:
+                effective_ttl = ttl_seconds
+            elif status == CacheEntryStatus.NOT_FOUND:
+                effective_ttl = settings.cache_negative_ttl_seconds
+            else:
+                effective_ttl = settings.cache_tombstone_ttl_seconds
+
+            payload: dict[str, Any] = {
+                "code": code,
+                "destination_url": None,
+                "expires_at": None,
+                "disabled": (status == CacheEntryStatus.DELETED),
+                "status": status.value,
+            }
+            await self.redis.set(
+                self._format_key(code),
+                json.dumps(payload),
+                ex=effective_ttl,
+            )
+        except Exception as exc:
+            logger.warning("Redis SET_TOMBSTONE url:%s status:%s failed: %s", code, status, exc)
 
     async def delete(self, code: str) -> None:
         """Invalidate URL in Redis."""

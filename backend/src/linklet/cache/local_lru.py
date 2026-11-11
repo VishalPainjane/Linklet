@@ -4,7 +4,7 @@ import time
 from datetime import UTC, datetime
 from typing import TypeVar
 
-from linklet.cache.interface import CachedUrl
+from linklet.cache.interface import CachedUrl, CacheEntryStatus
 
 T = TypeVar("T")
 
@@ -147,6 +147,23 @@ class LocalUrlCacheAdapter:
             destination_url=destination_url,
             expires_at=expires_at,
             disabled=False,
+            status=CacheEntryStatus.ACTIVE,
+        )
+        self._lru.put(code, cached, ttl_seconds=eff_ttl)
+
+    async def set_tombstone(
+        self,
+        code: str,
+        status: CacheEntryStatus,
+        ttl_seconds: int | None = None,
+    ) -> None:
+        eff_ttl: float | None = float(ttl_seconds) if ttl_seconds is not None else 60.0
+        cached = CachedUrl(
+            code=code,
+            destination_url=None,
+            expires_at=None,
+            disabled=(status == CacheEntryStatus.DELETED),
+            status=status,
         )
         self._lru.put(code, cached, ttl_seconds=eff_ttl)
 
