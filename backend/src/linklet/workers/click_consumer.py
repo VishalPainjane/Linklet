@@ -7,6 +7,7 @@ from uuid import UUID
 
 from aio_pika.abc import AbstractIncomingMessage
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from linklet.messaging.rabbitmq import RabbitMQTopology
@@ -92,6 +93,14 @@ class ClickConsumer:
                             event_id,
                             code,
                         )
+
+            except IntegrityError as exc:
+                logger.debug(
+                    "Skipping click event for unreferenced code %s: %s",
+                    code if "code" in locals() else "unknown",
+                    exc,
+                )
+                self._duplicate_count += 1
 
             except Exception as exc:
                 logger.error("Error processing message %s: %s", message.message_id, exc)
