@@ -8,9 +8,9 @@ from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from typing import Any
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from redis.asyncio import Redis
 
 from linklet.api.routes import auth, health, redirects, urls
@@ -360,7 +360,83 @@ def create_app() -> FastAPI:
 
     # Exception Handlers
     @app.exception_handler(LinkletError)
-    async def linklet_error_handler(request: Request, exc: LinkletError) -> JSONResponse:
+    async def linklet_error_handler(request: Request, exc: LinkletError) -> Response:
+        accept = request.headers.get("accept", "")
+        if "text/html" in accept and exc.status_code in (404, 410):
+            title = "Link Disabled (410)" if exc.status_code == 410 else "Link Not Found (404)"
+            html_body = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{title} - Linklet</title>
+  <style>
+    body {{
+      background: #09090b;
+      color: #f4f4f5;
+      font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      margin: 0;
+      padding: 1rem;
+    }}
+    .card {{
+      background: #18181b;
+      border: 1px solid #27272a;
+      border-radius: 1rem;
+      padding: 2.5rem;
+      max-width: 28rem;
+      width: 100%;
+      text-align: center;
+      box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5);
+    }}
+    .badge {{
+      display: inline-flex;
+      width: 3.5rem;
+      height: 3.5rem;
+      border-radius: 1rem;
+      background: rgba(99,102,241,0.1);
+      border: 1px solid rgba(99,102,241,0.2);
+      color: #818cf8;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.25rem;
+      font-weight: 700;
+      margin-bottom: 1.5rem;
+    }}
+    h1 {{ font-size: 1.25rem; font-weight: 700; color: #fff; margin: 0 0 0.5rem; }}
+    p {{ color: #a1a1aa; font-size: 0.875rem; line-height: 1.5; margin: 0 0 1.5rem; }}
+    a {{
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 100%;
+      padding: 0.75rem 1.25rem;
+      border-radius: 0.75rem;
+      background: #4f46e5;
+      color: #fff;
+      text-decoration: none;
+      font-weight: 500;
+      font-size: 0.875rem;
+      box-sizing: border-box;
+      transition: background 0.15s ease;
+    }}
+    a:hover {{ background: #4338ca; }}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="badge">{exc.status_code}</div>
+    <h1>{title}</h1>
+    <p>{exc.message}</p>
+    <a href="https://linklet-six.vercel.app">Return to Linklet</a>
+  </div>
+</body>
+</html>"""
+            return HTMLResponse(content=html_body, status_code=exc.status_code)
+
         return JSONResponse(
             status_code=exc.status_code,
             content={

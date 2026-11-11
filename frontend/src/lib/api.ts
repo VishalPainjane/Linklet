@@ -161,6 +161,13 @@ export async function logoutUser(): Promise<void> {
   }
 }
 
+export function formatDisplayShortUrl(code: string, fallbackUrl?: string): string {
+  if (typeof window !== "undefined" && window.location?.origin) {
+    return `${window.location.origin}/${code}`;
+  }
+  return fallbackUrl || `/${code}`;
+}
+
 export async function listUrls(params?: {
   status?: string;
   limit?: number;
@@ -180,6 +187,12 @@ export async function listUrls(params?: {
   if (!res.ok) {
     throw data as ApiError;
   }
+  if (Array.isArray(data.items)) {
+    data.items = data.items.map((item: UrlListItem) => ({
+      ...item,
+      shortUrl: formatDisplayShortUrl(item.code, item.shortUrl),
+    }));
+  }
   return data as UrlListResponse;
 }
 
@@ -197,7 +210,10 @@ export async function createShortUrl(payload: CreateUrlPayload): Promise<CreateU
   if (!res.ok) {
     throw data as ApiError;
   }
-  return data as CreateUrlResponse;
+  return {
+    ...data,
+    shortUrl: formatDisplayShortUrl(data.code, data.shortUrl),
+  };
 }
 
 export async function getUrlStats(code: string): Promise<UrlStatsResponse> {

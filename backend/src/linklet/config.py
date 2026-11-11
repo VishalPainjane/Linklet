@@ -22,8 +22,8 @@ class Settings(BaseSettings):
 
     # Public Addressing
     public_short_base_url: str = Field(
-        default="http://localhost:8000",
-        description="Public base URL for generated short links (e.g. https://linklet.onrender.com)",
+        default="https://linklet-six.vercel.app",
+        description="Public base URL for generated short links (e.g. https://linklet-six.vercel.app)",
     )
     allowed_cors_origins: str | list[str] = Field(
         default=[

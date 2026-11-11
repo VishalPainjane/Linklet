@@ -16,6 +16,8 @@ services:
         value: "false"
       - key: DATABASE_URL
         sync: false # Paste your Neon PostgreSQL connection string here
+      - key: PUBLIC_SHORT_BASE_URL
+        value: "https://linklet-six.vercel.app"
       - key: ALLOWED_CORS_ORIGINS
         value: "*"
       - key: RUN_CLICK_CONSUMER
