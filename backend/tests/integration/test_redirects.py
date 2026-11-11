@@ -5,6 +5,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from httpx import AsyncClient
 
+from linklet.cache.local_lru import LocalUrlCacheAdapter
 from linklet.messaging.publisher import MockEventPublisher
 
 
@@ -87,8 +88,8 @@ async def test_redirect_disabled_code_returns_410(test_client: AsyncClient) -> N
 @pytest.mark.asyncio
 async def test_redirect_expired_code_returns_410(test_client: AsyncClient) -> None:
     # Create with near-immediate expiration
-    exp = datetime.now(UTC) + timedelta(milliseconds=50)
-    await test_client.post(
+    exp = datetime.now(UTC) + timedelta(milliseconds=300)
+    create_res = await test_client.post(
         "/api/v1/urls",
         json={
             "url": "https://example.com/expired-target",
@@ -96,11 +97,60 @@ async def test_redirect_expired_code_returns_410(test_client: AsyncClient) -> No
             "expiresAt": exp.isoformat(),
         },
     )
+    assert create_res.status_code == 201
 
     import asyncio
 
-    await asyncio.sleep(0.08)
+    await asyncio.sleep(0.35)
 
     res = await test_client.get("/exp-link")
     assert res.status_code == 410
     assert "expired" in res.json()["message"]
+
+
+@pytest.mark.asyncio
+async def test_negative_caching_for_not_found(
+    test_client: AsyncClient,
+    test_cache: LocalUrlCacheAdapter,
+) -> None:
+    code = "never-existed-12345"
+    assert await test_cache.get(code) is None
+
+    # First request: misses cache, queries DB, returns 404
+    res1 = await test_client.get(f"/{code}")
+    assert res1.status_code == 404
+
+    # Verify negative cache entry is now set
+    cached = await test_cache.get(code)
+    assert cached is not None
+    assert cached.status.value == "not_found"
+
+    # Second request: served directly from negative cache without DB query
+    res2 = await test_client.get(f"/{code}")
+    assert res2.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_tombstone_caching_for_deleted_url(
+    test_client: AsyncClient,
+    test_cache: LocalUrlCacheAdapter,
+) -> None:
+    code = "to-be-tombstoned"
+    await test_client.post(
+        "/api/v1/urls",
+        json={"url": "https://example.com/target-tombstone", "customAlias": code},
+    )
+
+    # Disable / delete the URL
+    del_res = await test_client.delete(f"/api/v1/urls/{code}")
+    assert del_res.status_code == 204
+
+    # Verify tombstone exists in cache with DELETED status
+    cached = await test_cache.get(code)
+    assert cached is not None
+    assert cached.status.value == "deleted"
+
+    # Redirect attempt hits tombstone and returns 410 Gone without DB query
+    res = await test_client.get(f"/{code}")
+    assert res.status_code == 410
+    assert "disabled" in res.json()["message"].lower()

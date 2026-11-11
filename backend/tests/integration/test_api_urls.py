@@ -2,6 +2,10 @@
 
 import pytest
 from httpx import AsyncClient
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+from linklet.models.outbox import OutboxEvent
 
 
 @pytest.mark.asyncio
@@ -82,7 +86,10 @@ async def test_get_metadata_and_stats(test_client: AsyncClient) -> None:
 
 
 @pytest.mark.asyncio
-async def test_disable_url(test_client: AsyncClient) -> None:
+async def test_disable_url(
+    test_client: AsyncClient,
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
     res_create = await test_client.post(
         "/api/v1/urls",
         json={"url": "https://example.com/temp", "customAlias": "to-disable"},
@@ -97,4 +104,14 @@ async def test_disable_url(test_client: AsyncClient) -> None:
     meta = await test_client.get("/api/v1/urls/to-disable")
     assert meta.status_code == 200
     assert meta.json()["is_active"] is False
+
+    # Verify transactional outbox event was atomically inserted
+    async with session_factory() as session:
+        outbox_res = await session.execute(
+            select(OutboxEvent).where(OutboxEvent.aggregate_id == "to-disable")
+        )
+        event = outbox_res.scalar_one_or_none()
+        assert event is not None
+        assert event.event_type == "URL_DELETED"
+        assert event.payload["code"] == "to-disable"
 

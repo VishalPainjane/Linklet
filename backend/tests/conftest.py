@@ -13,7 +13,6 @@ from sqlalchemy.ext.asyncio import (
 )
 
 from linklet.cache.local_lru import LocalUrlCacheAdapter
-from linklet.config import settings
 from linklet.main import create_app
 from linklet.messaging.publisher import MockEventPublisher
 from linklet.models.base import Base
