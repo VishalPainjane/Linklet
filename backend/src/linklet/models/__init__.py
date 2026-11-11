@@ -3,6 +3,7 @@
 from linklet.models.analytics import ClickEvent, ProcessedEvent, UrlStats
 from linklet.models.base import Base
 from linklet.models.idempotency import IdempotencyKey
+from linklet.models.outbox import OutboxEvent
 from linklet.models.url import URL
 from linklet.models.user import User
 
@@ -14,5 +15,6 @@ __all__ = [
     "UrlStats",
     "ProcessedEvent",
     "ClickEvent",
+    "OutboxEvent",
 ]
 
