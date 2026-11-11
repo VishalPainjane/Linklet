@@ -4,8 +4,8 @@
   "private": true,
   "description": "Production-grade, systems-engineered URL shortener and concurrency lab",
   "scripts": {
-    "dev:frontend": "pnpm --dir frontend dev",
-    "build:frontend": "pnpm --dir frontend build",
+    "dev:frontend": "npm --prefix frontend run dev",
+    "build:frontend": "npm --prefix frontend run build",
     "dev:backend": "cd backend && uv run uvicorn linklet.main:app --reload",
     "test:backend": "cd backend && uv run pytest",
     "lint:backend": "cd backend && uv run ruff check .",
