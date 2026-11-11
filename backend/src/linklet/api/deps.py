@@ -1,8 +1,10 @@
 """FastAPI dependency injection providers."""
 
+import json
 from collections.abc import AsyncIterator
+from typing import Any
 
-from fastapi import Request
+from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from linklet.cache.interface import UrlCache
@@ -43,3 +45,47 @@ async def rate_limit_create_url(request: Request) -> None:
         )
         if not allowed:
             raise RateLimitExceededError(retry_after=settings.rate_limit_create_window_seconds)
+
+
+async def get_current_user_optional(request: Request) -> dict[str, Any] | None:
+    """Extract authenticated user session from Bearer header or session cookie."""
+    auth_header = request.headers.get("Authorization")
+    token: str | None = None
+    if auth_header and auth_header.startswith("Bearer "):
+        token = auth_header[7:].strip()
+    elif "linklet_session" in request.cookies:
+        token = request.cookies.get("linklet_session")
+
+    if not token:
+        return None
+
+    redis_client = getattr(request.app.state, "redis", None)
+    if redis_client:
+        try:
+            raw = await redis_client.get(f"session:{token}")
+            if raw:
+                return json.loads(raw)  # type: ignore[no-any-return]
+        except Exception:
+            pass
+
+    in_memory_sessions = getattr(request.app.state, "sessions", None)
+    if in_memory_sessions and f"session:{token}" in in_memory_sessions:
+        try:
+            return json.loads(in_memory_sessions[f"session:{token}"])  # type: ignore[no-any-return]
+        except Exception:
+            return None
+
+    return None
+
+
+async def get_current_user(
+    user: dict[str, Any] | None = Depends(get_current_user_optional),
+) -> dict[str, Any]:
+    """Require valid authenticated user session."""
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required. Please sign in.",
+        )
+    return user
+
