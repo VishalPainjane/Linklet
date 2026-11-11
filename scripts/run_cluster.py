@@ -5,9 +5,11 @@ import subprocess
 import sys
 import time
 import urllib.request
+from typing import Any
 
 PORTS = [8001, 8002, 8003, 8004]
 WORKERS: list[subprocess.Popen] = []  # type: ignore[type-arg]
+LOG_FILES: list[Any] = []
 
 
 def stop_workers() -> None:
@@ -19,6 +21,12 @@ def stop_workers() -> None:
     for p in WORKERS:
         if p.poll() is None:
             p.kill()
+    for f in LOG_FILES:
+        try:
+            f.flush()
+            f.close()
+        except Exception:
+            pass
     print("All cluster workers stopped.")
 
 
@@ -30,6 +38,8 @@ def main() -> None:
     )
     repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
     backend_dir = os.path.join(repo_root, "backend")
+    logs_dir = os.path.join(repo_root, "logs")
+    os.makedirs(logs_dir, exist_ok=True)
 
     # Use virtualenv python if available
     venv_python = os.path.join(backend_dir, ".venv", "Scripts", "python.exe")
@@ -49,9 +59,18 @@ def main() -> None:
             "--log-level",
             "warning",
         ]
-        proc = subprocess.Popen(cmd, cwd=backend_dir, env=env)
+        log_path = os.path.join(logs_dir, f"worker_{port}.log")
+        log_f = open(log_path, "w", encoding="utf-8")
+        LOG_FILES.append(log_f)
+        proc = subprocess.Popen(
+            cmd,
+            cwd=backend_dir,
+            env=env,
+            stdout=log_f,
+            stderr=subprocess.STDOUT,
+        )
         WORKERS.append(proc)
-        print(f"  Worker on port {port} started with PID {proc.pid}")
+        print(f"  Worker on port {port} started with PID {proc.pid} (logging to {log_path})")
 
     print("Verifying cluster health...")
     healthy = set()
@@ -87,4 +106,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

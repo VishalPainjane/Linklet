@@ -4,7 +4,7 @@ import json
 import os
 import random
 import urllib.request
-from locust import HttpUser, between, events, task
+from locust import FastHttpUser, between, events, task
 
 SEED_CODE = os.environ.get("SHORT_CODE", "seedCode1")
 ACTIVE_CODES: list[str] = [SEED_CODE]
@@ -34,7 +34,7 @@ def on_test_start(environment, **kwargs) -> None:  # type: ignore[no-untyped-def
             pass
 
 
-class LinkletUser(HttpUser):
+class LinkletUser(FastHttpUser):
     """Models a representative mixed traffic workload (99% Redirect Read, 1% Create Write)."""
 
     wait_time = between(0.01, 0.05)
@@ -54,15 +54,12 @@ class LinkletUser(HttpUser):
             allow_redirects=False,
             catch_response=True,
         ) as response:
-            if response.status_code == 302:
-                if response.headers.get("Location"):
-                    response.success()
-                else:
-                    response.failure("Missing Location header in 302 redirect")
-            elif response.status_code in (404, 410):
-                response.success()
+            if response.status_code != 302:
+                response.failure(f"Expected 302, got {response.status_code}")
+            elif not response.headers.get("Location"):
+                response.failure("Missing Location header")
             else:
-                response.failure(f"Unexpected redirect status: {response.status_code}")
+                response.success()
 
     @task(1)
     def create(self) -> None:
