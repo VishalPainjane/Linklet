@@ -8,7 +8,10 @@ dependencies = [
     "aio-pika>=10.2.3",
     "alembic>=1.20.1",
     "asyncpg>=0.32.0",
+    "bcrypt>=5.0.0",
     "fastapi>=0.162.2",
+    "google-auth>=2.62.2",
+    "httpx>=0.28.1",
     "pydantic-settings>=2.16.2",
     "redis[hiredis]>=8.1.0",
     "sqlalchemy[asyncio]>=2.1.8",
@@ -41,6 +44,7 @@ testpaths = ["tests"]
 [tool.ruff]
 line-length = 100
 target-version = "py312"
+extend-exclude = ["alembic"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]

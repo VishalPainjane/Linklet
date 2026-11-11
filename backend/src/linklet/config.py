@@ -1,6 +1,9 @@
 """Application configuration loaded via pydantic-settings."""
 
-from pydantic import Field
+import json
+from typing import Any
+
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -27,6 +30,23 @@ class Settings(BaseSettings):
         default=["http://localhost:3000", "http://localhost:3001", "http://127.0.0.1:3000"]
     )
 
+    @field_validator("allowed_cors_origins", mode="before")
+    @classmethod
+    def parse_cors_origins(cls, v: Any) -> list[str]:
+        if isinstance(v, str):
+            v = v.strip()
+            if v.startswith("[") and v.endswith("]"):
+                try:
+                    parsed: list[str] = json.loads(v)
+                    return parsed
+                except Exception:
+                    pass
+            return [origin.strip() for origin in v.split(",") if origin.strip()]
+        if isinstance(v, list):
+            return v
+        return ["*"]
+
+
     # PostgreSQL Database
     database_url: str = Field(
         default="postgresql+asyncpg://linklet:local-only-change-me@localhost:5433/linklet",
@@ -48,6 +68,12 @@ class Settings(BaseSettings):
     cache_default_ttl_seconds: int = Field(
         default=900, description="Default TTL for active non-expiring short links (15 minutes)"
     )
+    cache_negative_ttl_seconds: int = Field(
+        default=60, description="TTL for negative cache entries when URL is not found (1 minute)"
+    )
+    cache_tombstone_ttl_seconds: int = Field(
+        default=3600, description="TTL for deleted or expired URL tombstones (1 hour)"
+    )
 
     # RabbitMQ Messaging
     amqp_url: str = Field(default="amqp://guest:guest@localhost:5672/")
@@ -59,12 +85,30 @@ class Settings(BaseSettings):
         default=False,
         description="When true, run background click consumer task inside the API process",
     )
+    run_outbox_worker: bool = Field(
+        default=True,
+        description="When true, run background transactional outbox relay worker",
+    )
+    outbox_poll_interval_seconds: float = Field(
+        default=1.0,
+        description="Polling interval in seconds for transactional outbox dispatch",
+    )
 
     # Rate Limiting Policies
     rate_limit_create_window_seconds: int = Field(default=60)
     rate_limit_create_max_requests: int = Field(default=60)
     rate_limit_redirect_window_seconds: int = Field(default=60)
     rate_limit_redirect_max_requests: int = Field(default=600)
+
+    # Google OAuth 2.0 Identity
+    google_client_id: str | None = Field(
+        default=None,
+        description="Google OAuth Client ID for identity verification",
+    )
+    google_client_secret: str | None = Field(
+        default=None,
+        description="Google OAuth Client Secret",
+    )
 
     # Reserved Short Aliases
     reserved_aliases: set[str] = Field(
