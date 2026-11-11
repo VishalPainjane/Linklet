@@ -1,6 +1,7 @@
 """SQLAlchemy 2.x async PostgreSQL engine and session factory with connection pooling."""
 
 from collections.abc import AsyncIterator
+from typing import Any
 
 from fastapi import Request
 from sqlalchemy.ext.asyncio import (
@@ -27,6 +28,11 @@ def create_engine_and_session_factory(
     ):
         target_url = target_url.replace("postgresql://", "postgresql+asyncpg://", 1)
 
+    connect_args: dict[str, Any] = {}
+    # Neon / Supabase / PgBouncer connection pooler compatibility
+    if "pooler" in target_url or "pgbouncer" in target_url:
+        connect_args["statement_cache_size"] = 0
+
     engine = create_async_engine(
         target_url,
         pool_size=settings.db_pool_size,
@@ -35,6 +41,7 @@ def create_engine_and_session_factory(
         pool_recycle=settings.db_pool_recycle,
         pool_pre_ping=True,
         echo=settings.db_echo,
+        connect_args=connect_args,
     )
 
     session_factory = async_sessionmaker(

@@ -15,9 +15,7 @@ services:
       - key: DEBUG
         value: "false"
       - key: DATABASE_URL
-        fromDatabase:
-          name: linklet-db
-          property: connectionString
+        sync: false # Paste your Neon PostgreSQL connection string here
       - key: ALLOWED_CORS_ORIGINS
         value: "*"
       - key: RUN_CLICK_CONSUMER
@@ -28,12 +26,3 @@ services:
         sync: false
       - key: GOOGLE_CLIENT_SECRET
         sync: false
-
-databases:
-  # Free Managed PostgreSQL Database
-  - name: linklet-db
-    databaseName: linklet
-    user: linklet
-    plan: free
-    region: oregon
-

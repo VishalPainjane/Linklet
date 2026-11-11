@@ -7,10 +7,39 @@ on:
     branches: [main]
 
 jobs:
-  verify:
-    name: Typecheck, Test & Build
+  backend:
+    name: Backend Lint, Typecheck & Test
     runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: "latest"
+
+      - name: Set up Python 3.12
+        run: uv python install 3.12
+
+      - name: Lint with Ruff
+        run: |
+          cd backend
+          uv run ruff check .
+
+      - name: Typecheck with Mypy
+        run: |
+          cd backend
+          uv run mypy src
+
+      - name: Run Pytest Test Suite
+        run: |
+          cd backend
+          uv run pytest
+
+  frontend:
+    name: Frontend Build & Typecheck
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -20,35 +49,12 @@ jobs:
         with:
           node-version: 22
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 12.18.0
-
-      - name: Get pnpm store directory
-        shell: bash
+      - name: Install Frontend Dependencies
         run: |
-          echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
+          cd frontend
+          npm install
 
-      - name: Setup pnpm cache
-        uses: actions/cache@v4
-        with:
-          path: ${{ env.STORE_PATH }}
-          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
-          restore-keys: |
-            ${{ runner.os }}-pnpm-store-
-
-      - name: Install dependencies
+      - name: Build Next.js Application
         run: |
-          pnpm approve-builds --all
-          pnpm install --frozen-lockfile
-
-      - name: TypeScript Typecheck
-        run: pnpm typecheck
-
-      - name: Run Test Suite (Unit, Property & Concurrency)
-        run: pnpm test
-
-      - name: Build All Workspace Packages & Next.js App
-        run: pnpm build
-
+          cd frontend
+          npm run build

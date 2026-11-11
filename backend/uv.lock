@@ -1476,6 +1476,7 @@ dependencies = [
     { name = "httpx" },
     { name = "pydantic-settings" },
     { name = "redis", extra = ["hiredis"] },
+    { name = "requests" },
     { name = "sqlalchemy", extra = ["asyncio"] },
     { name = "uvicorn", extra = ["standard"] },
 ]
@@ -1505,6 +1506,7 @@ requires-dist = [
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "pydantic-settings", specifier = ">=2.16.2" },
     { name = "redis", extras = ["hiredis"], specifier = ">=8.1.0" },
+    { name = "requests", specifier = ">=2.34.2" },
     { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.1.8" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.54.0" },
 ]
