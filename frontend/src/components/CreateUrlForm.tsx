@@ -2,7 +2,16 @@
 
 import { useState } from "react";
 import { createShortUrl, type CreateUrlResponse, type ApiError } from "../lib/api";
-import { Link2, Sparkles, Clock, AlertCircle, ArrowRight, Loader2 } from "lucide-react";
+import {
+  Link2,
+  Sparkles,
+  Clock,
+  ArrowRight,
+  Loader2,
+  ChevronDown,
+  Globe,
+  SlidersHorizontal,
+} from "lucide-react";
 
 interface Props {
   onSuccess: (result: CreateUrlResponse) => void;
@@ -12,6 +21,7 @@ export function CreateUrlForm({ onSuccess }: Props) {
   const [url, setUrl] = useState("");
   const [customAlias, setCustomAlias] = useState("");
   const [expiresAt, setExpiresAt] = useState("");
+  const [showOptions, setShowOptions] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -23,8 +33,13 @@ export function CreateUrlForm({ onSuccess }: Props) {
     setError(null);
 
     try {
+      let targetUrl = url.trim();
+      if (!targetUrl.startsWith("http://") && !targetUrl.startsWith("https://")) {
+        targetUrl = "https://" + targetUrl;
+      }
+
       const res = await createShortUrl({
-        url: url.trim(),
+        url: targetUrl,
         customAlias: customAlias.trim() || undefined,
         expiresAt: expiresAt ? new Date(expiresAt).toISOString() : null,
       });
@@ -33,16 +48,15 @@ export function CreateUrlForm({ onSuccess }: Props) {
       setUrl("");
       setCustomAlias("");
       setExpiresAt("");
-    } catch (err: any) {
+      setShowOptions(false);
+    } catch (err: unknown) {
       const apiErr = err as ApiError;
-      if (apiErr.error === "conflict") {
-        setError("This custom alias is already claimed. Please choose a different alias.");
-      } else if (apiErr.error === "validation_error") {
-        setError(apiErr.message || "Invalid URL or alias parameters.");
-      } else if (apiErr.error === "rate_limit_exceeded") {
-        setError("Rate limit exceeded. Please wait a minute before creating more links.");
+      if (apiErr.error === "conflict" || apiErr.error === "AliasAlreadyTakenError") {
+        setError("This custom alias is already claimed. Please try another.");
+      } else if (apiErr.error === "rate_limit_exceeded" || apiErr.error === "RateLimitExceededError") {
+        setError("Rate limit reached. Please wait a moment before shortening more URLs.");
       } else {
-        setError(apiErr.message || "Failed to create short URL. Ensure backend is running.");
+        setError(apiErr.message || "Failed to create short link.");
       }
     } finally {
       setLoading(false);
@@ -50,93 +64,101 @@ export function CreateUrlForm({ onSuccess }: Props) {
   };
 
   return (
-    <div className="bg-slate-900/70 border border-slate-800 rounded-2xl p-6 shadow-xl backdrop-blur-sm">
-      <div className="flex items-center gap-2 mb-4">
-        <Sparkles className="w-5 h-5 text-indigo-400" />
-        <h2 className="text-lg font-semibold text-white">Create Short Link</h2>
-      </div>
-
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <div>
-          <label className="block text-xs font-mono text-slate-400 mb-1">
-            DESTINATION URL <span className="text-rose-400">*</span>
-          </label>
-          <div className="relative">
-            <Link2 className="absolute left-3.5 top-3.5 w-4 h-4 text-slate-500" />
-            <input
-              type="url"
-              required
-              placeholder="https://example.com/very/long/article/path?query=param"
-              value={url}
-              onChange={(e) => setUrl(e.target.value)}
-              className="w-full pl-10 pr-4 py-2.5 bg-slate-950/80 border border-slate-800 rounded-xl text-sm text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 font-mono transition"
-            />
+    <div className="bg-zinc-950/70 border border-zinc-800/80 rounded-2xl p-5 sm:p-6 shadow-xl backdrop-blur-md text-zinc-100">
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-2">
+          <div className="w-7 h-7 rounded-lg bg-indigo-500/10 border border-indigo-500/30 flex items-center justify-center text-indigo-400">
+            <Sparkles className="w-3.5 h-3.5" />
+          </div>
+          <div>
+            <h2 className="text-sm font-semibold text-white tracking-tight">Create Short Link</h2>
+            <p className="text-[11px] text-zinc-400">Zero-modulo-bias Base62 with SingleFlight stampede collapse</p>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <label className="block text-xs font-mono text-slate-400 mb-1">
-              CUSTOM ALIAS (OPTIONAL)
-            </label>
-            <div className="flex items-center">
-              <span className="px-3 py-2.5 bg-slate-950/60 border border-r-0 border-slate-800 rounded-l-xl text-xs font-mono text-slate-500">
-                /
-              </span>
-              <input
-                type="text"
-                placeholder="my-alias"
-                pattern="^[A-Za-z0-9_-]{3,32}$"
-                title="3-32 characters (letters, numbers, hyphens, underscores)"
-                value={customAlias}
-                onChange={(e) => setCustomAlias(e.target.value)}
-                className="w-full px-3 py-2.5 bg-slate-950/80 border border-slate-800 rounded-r-xl text-sm text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 font-mono transition"
-              />
-            </div>
-          </div>
+        <button
+          type="button"
+          onClick={() => setShowOptions(!showOptions)}
+          className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium border transition ${
+            showOptions
+              ? "bg-zinc-800 border-zinc-700 text-white"
+              : "bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-zinc-200"
+          }`}
+        >
+          <SlidersHorizontal className="w-3 h-3" />
+          <span>Options</span>
+          <ChevronDown className={`w-3 h-3 transition-transform ${showOptions ? "rotate-180" : ""}`} />
+        </button>
+      </div>
 
-          <div>
-            <label className="block text-xs font-mono text-slate-400 mb-1">
-              EXPIRES AT (OPTIONAL)
-            </label>
-            <div className="relative">
-              <Clock className="absolute left-3.5 top-3.5 w-4 h-4 text-slate-500" />
+      <form onSubmit={handleSubmit} className="space-y-3.5">
+        <div>
+          <div className="relative">
+            <Globe className="w-4 h-4 text-zinc-500 absolute left-3.5 top-3.5" />
+            <input
+              type="text"
+              required
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+              placeholder="Paste any long URL (e.g. https://github.com/astral-sh/uv)..."
+              className="w-full pl-10 pr-28 py-3 bg-zinc-900/90 border border-zinc-800 rounded-xl text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500 transition font-mono text-xs sm:text-sm"
+            />
+            <button
+              type="submit"
+              disabled={loading || !url.trim()}
+              className="absolute right-2 top-2 px-3.5 py-1.5 rounded-lg bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white text-xs font-medium flex items-center gap-1.5 transition disabled:opacity-40 shadow-sm"
+            >
+              {loading ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <>
+                  <span>Shorten</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+
+        {showOptions && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-zinc-800/80 animate-fade-in">
+            <div>
+              <label className="block text-xs font-medium text-zinc-300 mb-1">
+                Custom Alias (Optional)
+              </label>
+              <div className="flex items-center rounded-xl bg-zinc-900/90 border border-zinc-800 px-3 py-2 text-xs font-mono">
+                <span className="text-zinc-500">linklet.sh/</span>
+                <input
+                  type="text"
+                  value={customAlias}
+                  onChange={(e) => setCustomAlias(e.target.value)}
+                  placeholder="launch-2026"
+                  className="bg-transparent flex-1 text-zinc-100 focus:outline-none ml-1 placeholder-zinc-600"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-zinc-300 mb-1 flex items-center gap-1">
+                <Clock className="w-3 h-3 text-zinc-400" />
+                <span>Expiration Date (Optional)</span>
+              </label>
               <input
                 type="datetime-local"
                 value={expiresAt}
                 onChange={(e) => setExpiresAt(e.target.value)}
-                className="w-full pl-10 pr-4 py-2.5 bg-slate-950/80 border border-slate-800 rounded-xl text-sm text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 font-mono transition"
+                className="w-full px-3 py-2 bg-zinc-900/90 border border-zinc-800 rounded-xl text-xs text-zinc-300 focus:outline-none focus:ring-1 focus:ring-indigo-500 [color-scheme:dark]"
               />
             </div>
           </div>
-        </div>
-
-        {error && (
-          <div className="flex items-start gap-2.5 p-3 rounded-xl bg-rose-950/40 border border-rose-900/50 text-rose-300 text-xs font-mono">
-            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-rose-400" />
-            <span>{error}</span>
-          </div>
         )}
 
-        <button
-          type="submit"
-          disabled={loading || !url.trim()}
-          className="w-full py-3 px-4 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium text-sm rounded-xl shadow-lg shadow-indigo-600/20 flex items-center justify-center gap-2 transition"
-        >
-          {loading ? (
-            <>
-              <Loader2 className="w-4 h-4 animate-spin" />
-              <span>Generating Short Code...</span>
-            </>
-          ) : (
-            <>
-              <span>Shorten URL</span>
-              <ArrowRight className="w-4 h-4" />
-            </>
-          )}
-        </button>
+        {error && (
+          <div className="p-3 rounded-xl bg-rose-950/40 border border-rose-800/50 text-rose-300 text-xs">
+            {error}
+          </div>
+        )}
       </form>
     </div>
   );
 }
-

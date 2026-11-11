@@ -1,14 +1,15 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { getUrlStats, disableShortUrl, type UrlStatsResponse, type ApiError } from "../lib/api";
-import { BarChart3, Search, RefreshCw, AlertTriangle, Eye, Ban, CheckCircle2 } from "lucide-react";
+import { getUrlStats, disableShortUrl, enableShortUrl, type UrlStatsResponse, type ApiError } from "../lib/api";
+import { BarChart3, Search, RefreshCw, AlertTriangle, CheckCircle2, ShieldCheck, Zap } from "lucide-react";
 
 interface Props {
   initialCode?: string;
+  onRefreshList?: () => void;
 }
 
-export function StatsInspector({ initialCode = "" }: Props) {
+export function StatsInspector({ initialCode = "", onRefreshList }: Props) {
   const [code, setCode] = useState(initialCode);
   const [stats, setStats] = useState<UrlStatsResponse | null>(null);
   const [loading, setLoading] = useState(false);
@@ -31,10 +32,10 @@ export function StatsInspector({ initialCode = "" }: Props) {
     try {
       const data = await getUrlStats(lookupCode.trim());
       setStats(data);
-    } catch (err: any) {
+    } catch (err: unknown) {
       const apiErr = err as ApiError;
-      if (apiErr.error === "not_found") {
-        setError(`No URL found with code '${lookupCode}'.`);
+      if (apiErr.error === "not_found" || apiErr.error === "UrlNotFoundError") {
+        setError(`No URL found matching short code '${lookupCode}'.`);
       } else {
         setError(apiErr.message || "Failed to retrieve analytics.");
       }
@@ -46,7 +47,11 @@ export function StatsInspector({ initialCode = "" }: Props) {
 
   const handleDisable = async () => {
     if (!stats) return;
-    if (!confirm(`Are you sure you want to disable short code '${stats.code}'? Once disabled, it returns HTTP 410 Gone.`)) {
+    if (
+      !confirm(
+        `Disable short code '${stats.code}'? This records an atomic Outbox Event and writes a 1-hour Redis tombstone returning HTTP 410 Gone.`
+      )
+    ) {
       return;
     }
 
@@ -54,113 +59,150 @@ export function StatsInspector({ initialCode = "" }: Props) {
       await disableShortUrl(stats.code);
       setDisabledSuccess(true);
       await fetchStats(stats.code);
-    } catch (err: any) {
-      alert("Failed to disable link: " + (err.message || "unknown error"));
+      if (onRefreshList) onRefreshList();
+    } catch (err: unknown) {
+      const apiErr = err as { message?: string };
+      alert("Failed to disable link: " + (apiErr.message || "unknown error"));
+    }
+  };
+
+  const handleEnable = async () => {
+    if (!stats) return;
+    try {
+      await enableShortUrl(stats.code);
+      setDisabledSuccess(false);
+      await fetchStats(stats.code);
+      if (onRefreshList) onRefreshList();
+    } catch (err: unknown) {
+      const apiErr = err as { message?: string };
+      alert("Failed to enable link: " + (apiErr.message || "unknown error"));
     }
   };
 
   return (
-    <div className="bg-slate-900/70 border border-slate-800 rounded-2xl p-6 shadow-xl backdrop-blur-sm">
+    <div className="bg-zinc-950/80 border border-zinc-800/80 rounded-2xl p-5 sm:p-6 shadow-xl backdrop-blur-md text-zinc-100">
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-2">
-          <BarChart3 className="w-5 h-5 text-indigo-400" />
-          <h2 className="text-lg font-semibold text-white">Analytics & Lifecycle</h2>
+          <div className="w-7 h-7 rounded-lg bg-purple-500/10 border border-purple-500/30 flex items-center justify-center text-purple-400">
+            <BarChart3 className="w-3.5 h-3.5" />
+          </div>
+          <div>
+            <h2 className="text-sm font-semibold text-white tracking-tight">Real-Time Event Analytics</h2>
+            <p className="text-[11px] text-zinc-400">Asynchronously drained via RabbitMQ 4 idempotent consumer</p>
+          </div>
         </div>
 
         {stats && (
           <button
-            onClick={() => fetchStats(code)}
-            disabled={loading}
-            className="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg transition"
-            title="Refresh stats"
+            onClick={() => fetchStats(stats.code)}
+            title="Refresh statistics"
+            className="p-1.5 rounded-lg bg-zinc-900 border border-zinc-800 hover:bg-zinc-800 text-zinc-400 hover:text-white transition"
           >
-            <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
+            <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
           </button>
         )}
       </div>
 
-      <div className="flex gap-2 mb-4">
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          fetchStats(code);
+        }}
+        className="flex gap-2 mb-4"
+      >
         <div className="relative flex-1">
           <input
             type="text"
-            placeholder="Enter short code (e.g. aB3dE9kP)"
+            placeholder="Inspect code (e.g. docs or aB3de9kP)"
             value={code}
             onChange={(e) => setCode(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && fetchStats(code)}
-            className="w-full pl-3.5 pr-4 py-2 bg-slate-950/80 border border-slate-800 rounded-xl text-sm text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500 font-mono transition"
+            className="w-full px-3.5 py-2 bg-zinc-900 border border-zinc-800 rounded-xl text-xs text-white placeholder-zinc-500 focus:outline-none focus:ring-1 focus:ring-purple-500 font-mono transition"
           />
         </div>
         <button
-          onClick={() => fetchStats(code)}
+          type="submit"
           disabled={loading || !code.trim()}
-          className="px-4 py-2 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-white font-medium text-sm rounded-xl transition flex items-center gap-1.5"
+          className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-100 text-xs font-medium rounded-xl flex items-center gap-1.5 transition disabled:opacity-40"
         >
-          <Search className="w-4 h-4" />
-          <span>Lookup</span>
+          {loading ? (
+            <span className="w-3.5 h-3.5 border-2 border-white/20 border-t-white rounded-full animate-spin" />
+          ) : (
+            <>
+              <Search className="w-3.5 h-3.5" />
+              <span>Inspect</span>
+            </>
+          )}
         </button>
-      </div>
+      </form>
 
       {error && (
-        <div className="p-3 mb-4 rounded-xl bg-rose-950/40 border border-rose-900/50 text-rose-300 text-xs font-mono">
-          {error}
+        <div className="p-3 bg-rose-950/40 border border-rose-800/40 rounded-xl text-rose-300 text-xs flex items-center gap-2 mb-4">
+          <AlertTriangle className="w-4 h-4 shrink-0" />
+          <span>{error}</span>
         </div>
       )}
 
       {disabledSuccess && (
-        <div className="p-3 mb-4 rounded-xl bg-emerald-950/40 border border-emerald-900/50 text-emerald-300 text-xs font-mono flex items-center gap-2">
-          <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-          <span>Short link disabled successfully. Cache invalidated.</span>
+        <div className="p-3 bg-emerald-950/40 border border-emerald-800/40 rounded-xl text-emerald-300 text-xs flex items-center gap-2 mb-4">
+          <CheckCircle2 className="w-4 h-4 shrink-0" />
+          <span>Link disabled! Transactional Outbox committed; Redis tombstone set to 410 Gone.</span>
         </div>
       )}
 
       {stats ? (
-        <div className="space-y-4 animate-in fade-in duration-200">
+        <div className="space-y-4 animate-fade-in">
           <div className="grid grid-cols-2 gap-3">
-            <div className="p-4 bg-slate-950/80 border border-slate-800/80 rounded-xl">
-              <span className="text-xs font-mono text-slate-500 uppercase tracking-wider block mb-1">
-                Total Clicks
-              </span>
-              <span className="text-2xl font-bold font-mono text-indigo-400">
+            <div className="p-3.5 bg-zinc-900/90 border border-zinc-800 rounded-xl">
+              <span className="text-[10px] uppercase font-mono text-zinc-400">Total Redirect Clicks</span>
+              <div className="text-2xl font-bold font-mono text-white mt-1">
                 {stats.clickCount.toLocaleString()}
-              </span>
+              </div>
+              <span className="text-[10px] text-emerald-400 font-mono">Deduplicated in Postgres</span>
             </div>
 
-            <div className="p-4 bg-slate-950/80 border border-slate-800/80 rounded-xl">
-              <span className="text-xs font-mono text-slate-500 uppercase tracking-wider block mb-1">
-                Last Clicked
-              </span>
-              <span className="text-xs font-mono text-slate-300 block truncate mt-1">
+            <div className="p-3.5 bg-zinc-900/90 border border-zinc-800 rounded-xl">
+              <span className="text-[10px] uppercase font-mono text-zinc-400">Last Click Received</span>
+              <div className="text-xs font-mono text-zinc-200 mt-2 truncate">
                 {stats.lastClickedAt
-                  ? new Date(stats.lastClickedAt).toLocaleTimeString() +
-                    " " +
-                    new Date(stats.lastClickedAt).toLocaleDateString()
-                  : "Never"}
+                  ? new Date(stats.lastClickedAt).toLocaleTimeString()
+                  : "No clicks recorded"}
+              </div>
+              <span className="text-[10px] text-zinc-500 font-mono">
+                {stats.lastClickedAt
+                  ? new Date(stats.lastClickedAt).toLocaleDateString()
+                  : "Awaiting traffic"}
               </span>
             </div>
           </div>
 
-          <div className="flex items-center justify-between pt-2 border-t border-slate-800">
-            <span className="text-xs font-mono text-slate-500">
-              Updated: {new Date(stats.updatedAt).toLocaleTimeString()}
-            </span>
+          <div className="p-3 bg-zinc-900/60 border border-zinc-800 rounded-xl flex items-center justify-between text-xs">
+            <div className="flex items-center gap-2 text-zinc-300 font-mono">
+              <ShieldCheck className="w-4 h-4 text-indigo-400" />
+              <span>Event Delivery Guarantees</span>
+            </div>
+            <span className="text-[10px] text-zinc-400 font-mono">At-Least-Once Ledger</span>
+          </div>
 
+          <div className="flex gap-2">
             <button
               onClick={handleDisable}
-              className="px-3 py-1.5 bg-rose-950/40 hover:bg-rose-900/60 border border-rose-800/50 text-rose-300 rounded-lg text-xs font-mono flex items-center gap-1.5 transition"
+              className="flex-1 py-2 bg-rose-950/40 hover:bg-rose-950/70 border border-rose-800/40 hover:border-rose-700/60 text-rose-300 hover:text-rose-200 text-xs font-medium rounded-xl transition flex items-center justify-center gap-1.5"
             >
-              <Ban className="w-3.5 h-3.5" />
-              <span>Disable Link</span>
+              <span>Disable (Tombstone)</span>
+            </button>
+            <button
+              onClick={handleEnable}
+              className="flex-1 py-2 bg-emerald-950/40 hover:bg-emerald-950/70 border border-emerald-800/40 hover:border-emerald-700/60 text-emerald-300 hover:text-emerald-200 text-xs font-medium rounded-xl transition flex items-center justify-center gap-1.5"
+            >
+              <span>Re-enable Link</span>
             </button>
           </div>
         </div>
       ) : (
-        !error && (
-          <p className="text-xs font-mono text-slate-600 text-center py-4">
-            Enter a code to inspect real-time click aggregation and lifecycle status.
-          </p>
-        )
+        <div className="p-8 text-center text-zinc-500 font-mono text-xs border border-dashed border-zinc-800/80 rounded-xl">
+          Enter any short link code above to inspect real-time click volume and invalidation state.
+        </div>
       )}
     </div>
   );
 }
-
