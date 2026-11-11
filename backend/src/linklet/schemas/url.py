@@ -152,3 +152,82 @@ class UrlMetadataResponse(BaseModel):
     @property
     def disabledAt(self) -> datetime | None:
         return self.disabled_at
+
+
+class UrlListItem(BaseModel):
+    """Summarized URL item for SaaS management table."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    code: str
+    short_url: str
+    destination_url: str
+    is_custom: bool = False
+    created_at: datetime
+    expires_at: datetime | None = None
+    disabled_at: datetime | None = None
+    is_active: bool
+    click_count: int = 0
+    last_clicked_at: datetime | None = None
+
+    @computed_field
+    @property
+    def shortUrl(self) -> str:
+        return self.short_url
+
+    @computed_field
+    @property
+    def destinationUrl(self) -> str:
+        return self.destination_url
+
+    @computed_field
+    @property
+    def isActive(self) -> bool:
+        return self.is_active
+
+    @computed_field
+    @property
+    def clickCount(self) -> int:
+        return self.click_count
+
+    @computed_field
+    @property
+    def lastClickedAt(self) -> datetime | None:
+        return self.last_clicked_at
+
+    @computed_field
+    @property
+    def createdAt(self) -> datetime:
+        return self.created_at
+
+    @computed_field
+    @property
+    def expiresAt(self) -> datetime | None:
+        return self.expires_at
+
+    @computed_field
+    @property
+    def disabledAt(self) -> datetime | None:
+        return self.disabled_at
+
+
+class UrlListResponse(BaseModel):
+    """Paginated list of URLs with user metrics summary."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    items: list[UrlListItem]
+    total: int
+    total_clicks: int = 0
+    active_count: int = 0
+
+    @computed_field
+    @property
+    def totalClicks(self) -> int:
+        return self.total_clicks
+
+    @computed_field
+    @property
+    def activeCount(self) -> int:
+        return self.active_count
+

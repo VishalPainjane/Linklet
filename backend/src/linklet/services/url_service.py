@@ -12,17 +12,20 @@ from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from linklet.cache.interface import UrlCache
+from linklet.cache.interface import CacheEntryStatus, UrlCache
 from linklet.config import settings
 from linklet.errors import (
     IdempotencyConflictError,
     UrlNotFoundError,
 )
 from linklet.models.idempotency import IdempotencyKey
+from linklet.repositories.outbox_repository import OutboxRepository
 from linklet.repositories.url_repository import UrlRepository
 from linklet.schemas.url import (
     CreateUrlRequest,
     CreateUrlResponse,
+    UrlListItem,
+    UrlListResponse,
     UrlMetadataResponse,
 )
 
@@ -48,6 +51,7 @@ class UrlService:
         self.cache = cache
         self.base_url = base_url.rstrip("/")
         self.repo = UrlRepository(session=session)
+        self.outbox_repo = OutboxRepository(session=session)
 
     def _format_short_url(self, code: str) -> str:
         return f"{self.base_url}/{code}"
@@ -144,6 +148,14 @@ class UrlService:
             await self.session.execute(update_stmt)
 
         await self.session.commit()
+
+        # Pre-warm cache with active URL (overwriting any previous negative cache)
+        await self.cache.set(
+            code=url_record.code,
+            destination_url=url_record.destination_url,
+            expires_at=url_record.expires_at,
+        )
+
         return response
 
     async def get_url_metadata(self, code: str) -> UrlMetadataResponse:
@@ -169,14 +181,111 @@ class UrlService:
         )
 
     async def disable_url(self, code: str) -> None:
-        """Mark URL disabled and invalidate cache entry."""
+        """Mark URL disabled, persist transactional outbox event, and write tombstone to cache."""
         record = await self.repo.get_by_code(code)
         if record is None:
             raise UrlNotFoundError(code)
 
         updated = await self.repo.disable(code)
+        if updated:
+            # 1. Transactional Outbox: Write event within the same atomic database transaction
+            self.outbox_repo.create_event(
+                event_type="URL_DELETED",
+                aggregate_id=code,
+                payload={
+                    "code": code,
+                    "action": "set_tombstone",
+                    "status": CacheEntryStatus.DELETED.value,
+                    "ttl_seconds": settings.cache_tombstone_ttl_seconds,
+                },
+            )
+
+        # Atomic commit: URL status and Outbox note are committed together
         await self.session.commit()
 
         if updated:
-            # Purge cache
-            await self.cache.delete(code)
+            # 2. Fast Path: Immediate synchronous tombstone write (0ms revocation)
+            try:
+                await self.cache.set_tombstone(
+                    code=code,
+                    status=CacheEntryStatus.DELETED,
+                    ttl_seconds=settings.cache_tombstone_ttl_seconds,
+                )
+            except Exception as exc:
+                logger.warning(
+                    "Direct cache tombstone write failed for %s (%s). Outbox worker will repair.",
+                    code,
+                    exc,
+                )
+
+    async def enable_url(self, code: str) -> UrlMetadataResponse:
+        """Mark URL active again, commit outbox event, and clear tombstone from cache."""
+        record = await self.repo.get_by_code(code)
+        if record is None:
+            raise UrlNotFoundError(code)
+
+        updated = await self.repo.enable(code)
+        if updated:
+            self.outbox_repo.create_event(
+                event_type="URL_ENABLED",
+                aggregate_id=code,
+                payload={
+                    "code": code,
+                    "action": "clear_tombstone",
+                },
+            )
+
+        await self.session.commit()
+
+        if updated:
+            try:
+                await self.cache.delete(code)
+            except Exception as exc:
+                logger.warning(
+                    "Direct tombstone eviction failed for %s (%s). Outbox worker will repair.",
+                    code,
+                    exc,
+                )
+
+        return await self.get_url_metadata(code)
+
+    async def list_urls(
+        self,
+        owner_id: UUID | None = None,
+        limit: int = 50,
+        offset: int = 0,
+        status_filter: str | None = None,
+    ) -> UrlListResponse:
+        """Fetch paginated URLs with live click counters."""
+        rows, total, total_clicks, active_count = await self.repo.list_urls(
+            owner_id=owner_id,
+            limit=limit,
+            offset=offset,
+            status_filter=status_filter,
+        )
+        items: list[UrlListItem] = []
+        now = datetime.now(UTC)
+        for url_record, click_count, last_clicked_at in rows:
+            is_active = url_record.disabled_at is None and (
+                url_record.expires_at is None or url_record.expires_at > now
+            )
+            items.append(
+                UrlListItem(
+                    code=url_record.code,
+                    short_url=self._format_short_url(url_record.code),
+                    destination_url=url_record.destination_url,
+                    is_custom=url_record.is_custom,
+                    created_at=url_record.created_at,
+                    expires_at=url_record.expires_at,
+                    disabled_at=url_record.disabled_at,
+                    is_active=is_active,
+                    click_count=click_count,
+                    last_clicked_at=last_clicked_at,
+                )
+            )
+        return UrlListResponse(
+            items=items,
+            total=total,
+            total_clicks=total_clicks,
+            active_count=active_count,
+        )
