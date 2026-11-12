@@ -6,13 +6,13 @@
 
 [![CI Pipeline](https://github.com/VishalPainjane/Linklet/actions/workflows/ci.yml/badge.svg)](https://github.com/VishalPainjane/Linklet/actions/workflows/ci.yml)
 [![Live Frontend](https://img.shields.io/badge/Frontend-Vercel-black?logo=vercel)](https://linklet-six.vercel.app)
-[![Backend](https://img.shields.io/badge/Backend-FastAPI-009688?logo=fastapi)](backend/)
+[![API Docs](https://img.shields.io/badge/API%20Docs-Render-46E3B7?logo=render)](https://linklet-api-ikru.onrender.com/docs)
 [![Database](https://img.shields.io/badge/Database-Neon%20Postgres-00E599?logo=postgresql)](https://neon.tech)
 [![Python](https://img.shields.io/badge/Python-3.12-3776AB?logo=python)](https://python.org)
 [![Next.js](https://img.shields.io/badge/Next.js-15-black?logo=next.js)](https://nextjs.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-[**Explore Live App**](https://linklet-six.vercel.app) • [**Architecture Blueprint**](docs/ENGINEERING_BLUEPRINT.md) • [**GitHub Repository**](https://github.com/VishalPainjane/Linklet)
+[**Explore Live App**](https://linklet-six.vercel.app) • [**API Documentation**](https://linklet-api-ikru.onrender.com/docs) • [**Architecture Blueprint**](docs/ENGINEERING_BLUEPRINT.md) • [**GitHub Repository**](https://github.com/VishalPainjane/Linklet)
 
 </div>
 
@@ -27,6 +27,7 @@ Unlike trivial URL shorteners that lock a relational database synchronously on e
 ### Live Production Deployments
 
 - **Web Application (Vercel):** [https://linklet-six.vercel.app](https://linklet-six.vercel.app)
+- **API Documentation & Swagger (Render):** [https://linklet-api-ikru.onrender.com/docs](https://linklet-api-ikru.onrender.com/docs)
 - **Database (Neon Serverless):** PostgreSQL 18 with connection pooling, autoscaling, and libpq SSL normalization.
 - **GitHub Repository:** [https://github.com/VishalPainjane/Linklet](https://github.com/VishalPainjane/Linklet)
 
