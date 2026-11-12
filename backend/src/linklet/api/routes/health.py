@@ -63,7 +63,7 @@ async def get_asgi_diagnostics(reset: bool = False) -> dict[str, Any]:
 @router.get("/health", status_code=status.HTTP_200_OK)
 async def health() -> dict[str, str]:
     """Process liveness probe."""
-    return {"status": "ok", "service": "linklet"}
+    return {"status": "ok"}
 
 
 @router.get("/ready")

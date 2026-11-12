@@ -95,3 +95,4 @@ uv run mypy src tests
 # Run linter & formatter
 uv run ruff check .
 ```
+
