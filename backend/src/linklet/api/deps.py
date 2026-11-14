@@ -1,14 +1,14 @@
 """FastAPI dependency injection providers."""
 
-import json
 from collections.abc import AsyncIterator
 from typing import Any
 
+import jwt
 from fastapi import Depends, HTTPException, Request, status
+from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from linklet.cache.interface import UrlCache
-from linklet.cache.redis_cache import RedisUrlCache
 from linklet.config import settings
 from linklet.errors import RateLimitExceededError
 from linklet.messaging.publisher import EventPublisher
@@ -32,50 +32,56 @@ def get_publisher(request: Request) -> EventPublisher:
 
 
 async def rate_limit_create_url(request: Request) -> None:
-    """Rate limit guard for URL creation."""
-    client_ip = request.client.host if request.client else "127.0.0.1"
-    cache_instance: UrlCache = request.app.state.cache
+    """Rate limit guard for URL creation using standard Redis pipeline."""
+    redis_client: Redis | None = getattr(request.app.state, "redis", None)
+    if not redis_client:
+        return
 
-    if isinstance(cache_instance, RedisUrlCache):
-        key = f"rate:create:{client_ip}"
-        allowed, count = await cache_instance.check_rate_limit(
-            key=key,
-            max_requests=settings.rate_limit_create_max_requests,
-            window_seconds=settings.rate_limit_create_window_seconds,
-        )
-        if not allowed:
+    client_ip = request.client.host if request.client else "127.0.0.1"
+    key = f"rate:create:{client_ip}"
+    try:
+        pipe = redis_client.pipeline()
+        pipe.incr(key)
+        pipe.expire(key, settings.rate_limit_create_window_seconds)
+        results = await pipe.execute()
+        count = int(results[0])
+        if count > settings.rate_limit_create_max_requests:
             raise RateLimitExceededError(retry_after=settings.rate_limit_create_window_seconds)
+    except RateLimitExceededError:
+        raise
+    except Exception:
+        # Fail open on temporary cache failure
+        pass
 
 
 async def get_current_user_optional(request: Request) -> dict[str, Any] | None:
-    """Extract authenticated user session from Bearer header or session cookie."""
+    """Extract authenticated user identity from Bearer JWT header."""
     auth_header = request.headers.get("Authorization")
-    token: str | None = None
-    if auth_header and auth_header.startswith("Bearer "):
-        token = auth_header[7:].strip()
-    elif "linklet_session" in request.cookies:
-        token = request.cookies.get("linklet_session")
+    if not auth_header or not auth_header.startswith("Bearer "):
+        return None
 
+    token = auth_header[7:].strip()
     if not token:
         return None
 
-    redis_client = getattr(request.app.state, "redis", None)
-    if redis_client:
-        try:
-            raw = await redis_client.get(f"session:{token}")
-            if raw:
-                return json.loads(raw)  # type: ignore[no-any-return]
-        except Exception:
-            pass
+    try:
+        payload = jwt.decode(
+            token,
+            settings.jwt_secret,
+            algorithms=[settings.jwt_algorithm],
+        )
+    except jwt.PyJWTError:
+        return None
 
-    in_memory_sessions = getattr(request.app.state, "sessions", None)
-    if in_memory_sessions and f"session:{token}" in in_memory_sessions:
-        try:
-            return json.loads(in_memory_sessions[f"session:{token}"])  # type: ignore[no-any-return]
-        except Exception:
-            return None
+    user_id = payload.get("sub")
+    if not user_id:
+        return None
 
-    return None
+    return {
+        "id": user_id,
+        "email": payload.get("email"),
+        "created_at": payload.get("created_at"),
+    }
 
 
 async def get_current_user(
@@ -88,4 +94,3 @@ async def get_current_user(
             detail="Authentication required. Please sign in.",
         )
     return user
-

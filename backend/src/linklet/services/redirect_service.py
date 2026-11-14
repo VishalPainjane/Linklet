@@ -2,7 +2,6 @@
 negative caching, lifecycle tombstones, and async analytics dispatch.
 """
 
-import asyncio
 import logging
 from datetime import UTC, datetime
 from urllib.parse import urlparse
@@ -10,7 +9,6 @@ from urllib.parse import urlparse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from linklet.cache.interface import CachedUrl, CacheEntryStatus, UrlCache
-from linklet.cache.redis_cache import RedisUrlCache
 from linklet.config import settings
 from linklet.errors import UrlGoneError, UrlNotFoundError
 from linklet.messaging.events import ClickEventMessage
@@ -85,21 +83,7 @@ class RedirectService:
         if cached is not None:
             destination = await self._handle_cached_entry(code, cached, now)
         else:
-            # 2. Cache miss: use single-flight coalescing if available
-            lock: asyncio.Lock | None = None
-            if isinstance(self.cache, RedisUrlCache):
-                lock = await self.cache.get_lock_for_key(code)
-
-            if lock:
-                async with lock:
-                    # Double-checked locking
-                    cached_retry = await self.cache.get(code)
-                    if cached_retry is not None:
-                        destination = await self._handle_cached_entry(code, cached_retry, now)
-                    else:
-                        destination = await self._fetch_from_db_and_cache(code, now)
-            else:
-                destination = await self._fetch_from_db_and_cache(code, now)
+            destination = await self._fetch_from_db_and_cache(code, now)
 
         # 3. Asynchronously enqueue click event (non-blocking Mode A)
         referrer_host = urlparse(referrer).hostname if referrer else None

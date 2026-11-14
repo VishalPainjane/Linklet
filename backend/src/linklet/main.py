@@ -313,12 +313,6 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     if outbox_worker:
         await outbox_worker.stop()
 
-    if hasattr(app.state, "cache") and hasattr(app.state.cache, "log_summary"):
-        try:
-            app.state.cache.log_summary()
-        except Exception:
-            pass
-
     if consumer:
         await consumer.stop()
 

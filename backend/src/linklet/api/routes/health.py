@@ -19,24 +19,10 @@ logger = logging.getLogger(__name__)
 async def get_cache_diagnostics(
     cache: UrlCache = Depends(get_cache),
 ) -> dict[str, Any]:
-    """Retrieve runtime cache diagnostics and connection pool utilization."""
+    """Retrieve runtime cache diagnostics."""
     if isinstance(cache, RedisUrlCache):
-        cache.log_summary()
-        pool = getattr(cache.redis, "connection_pool", None)
-        in_use = len(getattr(pool, "_in_use_connections", [])) if pool else 0
-        avail = len(getattr(pool, "_available_connections", [])) if pool else 0
-        total_reqs = (
-            cache._get_stats["hits"] + cache._get_stats["misses"] + cache._get_stats["errors"]
-        )
-        return {
-            "hits": cache._get_stats["hits"],
-            "misses": cache._get_stats["misses"],
-            "errors": cache._get_stats["errors"],
-            "total_get_requests": total_reqs,
-            "in_use_connections": in_use,
-            "available_connections": avail,
-        }
-    return {"status": "non_redis_cache"}
+        return {"status": "redis_connected"}
+    return {"status": "local_lru_active"}
 
 
 @router.get("/diagnostics/asgi", status_code=status.HTTP_200_OK)

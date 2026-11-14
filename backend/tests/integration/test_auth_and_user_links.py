@@ -14,7 +14,9 @@ async def test_auth_login_me_logout(test_client: AsyncClient) -> None:
     assert reg_res.status_code == 201
     data = reg_res.json()
     assert "token" in data
-    assert data["token"].startswith("lkt_sess_")
+    # Verify standard JWT structure: header.payload.signature
+    assert len(data["token"].split(".")) == 3
+    assert data["token_type"] == "bearer"
     assert data["user"]["email"] == "founder@yc-startup.io"
 
     # 2. Test login with wrong password
@@ -31,6 +33,7 @@ async def test_auth_login_me_logout(test_client: AsyncClient) -> None:
     )
     assert login_res.status_code == 200
     token = login_res.json()["token"]
+    assert len(token.split(".")) == 3
 
     # 4. Get current profile via Bearer header
     me_res = await test_client.get(
@@ -61,40 +64,20 @@ async def test_auth_login_me_logout(test_client: AsyncClient) -> None:
     codes = [item["code"] for item in list_data["items"]]
     assert created_link["code"] in codes
 
-    # 7. Logout
+    # 7. Logout (stateless acknowledgement)
     logout_res = await test_client.post(
         "/api/v1/auth/logout",
         headers={"Authorization": f"Bearer {token}"},
     )
     assert logout_res.status_code == 200
 
-    # 8. Verify revoked session
-    revoked_res = await test_client.get(
+    # 8. Unauthenticated request without token receives 401
+    unauthed_res = await test_client.get("/api/v1/auth/me")
+    assert unauthed_res.status_code == 401
+
+    # 9. Invalid JWT receives 401
+    invalid_res = await test_client.get(
         "/api/v1/auth/me",
-        headers={"Authorization": f"Bearer {token}"},
+        headers={"Authorization": "Bearer not.a.valid.jwt.token"},
     )
-    assert revoked_res.status_code == 401
-
-
-
-@pytest.mark.asyncio
-async def test_google_auth_login(test_client: AsyncClient) -> None:
-    # 1. Sign in with development Google credential
-    google_res = await test_client.post(
-        "/api/v1/auth/google",
-        json={"credential": "dev_test_google_founder@company.com"},
-    )
-    assert google_res.status_code == 200
-    data = google_res.json()
-    assert "token" in data
-    assert data["token"].startswith("lkt_sess_")
-    assert data["user"]["email"] == "google_founder@company.com"
-
-    # 2. Verify session profile
-    me_res = await test_client.get(
-        "/api/v1/auth/me",
-        headers={"Authorization": f"Bearer {data['token']}"},
-    )
-    assert me_res.status_code == 200
-    assert me_res.json()["email"] == "google_founder@company.com"
-
+    assert invalid_res.status_code == 401

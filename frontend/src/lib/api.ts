@@ -11,6 +11,7 @@ export interface AuthUser {
 
 export interface AuthResponse {
   token: string;
+  token_type?: string;
   user: AuthUser;
 }
 
@@ -104,20 +105,6 @@ export async function registerWithEmail(email: string, password: string): Promis
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email, password }),
-  });
-  const data = await res.json();
-  if (!res.ok) {
-    throw data as ApiError;
-  }
-  setAuthToken(data.token);
-  return data as AuthResponse;
-}
-
-export async function loginWithGoogle(credential: string): Promise<AuthResponse> {
-  const res = await fetch(`${API_BASE_URL}/api/v1/auth/google`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ credential }),
   });
   const data = await res.json();
   if (!res.ok) {

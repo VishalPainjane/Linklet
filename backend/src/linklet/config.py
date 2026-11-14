@@ -107,14 +107,18 @@ class Settings(BaseSettings):
     rate_limit_redirect_window_seconds: int = Field(default=60)
     rate_limit_redirect_max_requests: int = Field(default=600)
 
-    # Google OAuth 2.0 Identity
-    google_client_id: str | None = Field(
-        default=None,
-        description="Google OAuth Client ID for identity verification",
+    # JWT Authentication
+    jwt_secret: str = Field(
+        default="linklet-insecure-default-change-me-in-production-jwt-secret-key-32b",
+        description="Secret key used for signing and verifying JWT tokens",
     )
-    google_client_secret: str | None = Field(
-        default=None,
-        description="Google OAuth Client Secret",
+    jwt_algorithm: str = Field(
+        default="HS256",
+        description="JWT cryptographic algorithm",
+    )
+    jwt_expire_minutes: int = Field(
+        default=60 * 24 * 7,  # 7 days
+        description="JWT token validity expiration in minutes",
     )
 
     # Reserved Short Aliases

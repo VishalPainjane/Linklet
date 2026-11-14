@@ -1,4 +1,4 @@
-"""Pydantic v2 schemas for user authentication and session management."""
+"""Pydantic v2 schemas for user authentication."""
 
 from datetime import datetime
 from uuid import UUID
@@ -20,17 +20,6 @@ class RegisterRequest(BaseModel):
     password: str = Field(..., min_length=6, max_length=128, description="Account password")
 
 
-
-class GoogleAuthRequest(BaseModel):
-    """Google OAuth credential verification payload."""
-
-    credential: str = Field(
-        ..., description="Google ID Token JWT returned from Google Identity Services"
-    )
-
-
-
-
 class UserResponse(BaseModel):
     """User account entity response."""
 
@@ -42,8 +31,8 @@ class UserResponse(BaseModel):
 
 
 class AuthResponse(BaseModel):
-    """Session authentication payload returned upon sign-in."""
+    """JWT authentication payload returned upon register/login."""
 
     token: str
+    token_type: str = "bearer"
     user: UserResponse
-

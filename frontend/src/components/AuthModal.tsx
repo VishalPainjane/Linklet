@@ -1,47 +1,12 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   loginWithEmail,
   registerWithEmail,
-  loginWithGoogle,
   type AuthUser,
 } from "../lib/api";
 import { X, ArrowRight, Mail, Lock, Eye, EyeOff, UserPlus, LogIn } from "lucide-react";
-
-interface GoogleCredentialResponse {
-  credential?: string;
-  select_by?: string;
-}
-
-declare global {
-  interface Window {
-    google?: {
-      accounts: {
-        id: {
-          initialize: (config: {
-            client_id: string;
-            callback: (res: GoogleCredentialResponse) => void;
-            auto_select?: boolean;
-            cancel_on_tap_outside?: boolean;
-          }) => void;
-          renderButton: (
-            parent: HTMLElement,
-            options: {
-              theme?: "outline" | "filled_blue" | "filled_black";
-              size?: "large" | "medium" | "small";
-              text?: "signin_with" | "signup_with" | "continue_with" | "signin";
-              shape?: "rectangular" | "pill" | "circle" | "square";
-              width?: string | number;
-              logo_alignment?: "left" | "center";
-            }
-          ) => void;
-          prompt?: () => void;
-        };
-      };
-    };
-  }
-}
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -62,12 +27,6 @@ export function AuthModal({
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [googleLoaded, setGoogleLoaded] = useState(false);
-  const googleBtnRef = useRef<HTMLDivElement>(null);
-
-  const clientId =
-    process.env["NEXT_PUBLIC_GOOGLE_CLIENT_ID"] ||
-    "232921905265-abpm3g9j2r3nqeehg211dvpus4pn0n8k.apps.googleusercontent.com";
 
   // Synchronize initial mode when modal opens
   useEffect(() => {
@@ -77,71 +36,6 @@ export function AuthModal({
       setPassword("");
     }
   }, [isOpen, initialMode]);
-
-  // Setup Google Identity Services Button
-  useEffect(() => {
-    if (!isOpen) return;
-
-    let timer: NodeJS.Timeout | null = null;
-
-    const setupGoogleButton = () => {
-      if (typeof window !== "undefined" && window.google?.accounts?.id && googleBtnRef.current) {
-        try {
-          window.google.accounts.id.initialize({
-            client_id: clientId,
-            callback: async (res: GoogleCredentialResponse) => {
-              if (res.credential) {
-                setLoading(true);
-                setError(null);
-                try {
-                  const authRes = await loginWithGoogle(res.credential);
-                  onSuccess(authRes.user);
-                  onClose();
-                } catch (err: unknown) {
-                  const apiErr = err as { message?: string; detail?: string };
-                  setError(
-                    apiErr.detail ||
-                      apiErr.message ||
-                      "Google authentication failed. Please try again."
-                  );
-                } finally {
-                  setLoading(false);
-                }
-              }
-            },
-          });
-
-          googleBtnRef.current.innerHTML = "";
-          window.google.accounts.id.renderButton(googleBtnRef.current, {
-            theme: "filled_black",
-            size: "large",
-            text: mode === "signin" ? "signin_with" : "signup_with",
-            shape: "rectangular",
-            width: 336,
-            logo_alignment: "left",
-          });
-          setGoogleLoaded(true);
-        } catch (e) {
-          console.error("Google Auth initialization error:", e);
-        }
-      }
-    };
-
-    if (window.google?.accounts?.id) {
-      setupGoogleButton();
-    } else {
-      timer = setInterval(() => {
-        if (window.google?.accounts?.id) {
-          setupGoogleButton();
-          if (timer) clearInterval(timer);
-        }
-      }, 150);
-    }
-
-    return () => {
-      if (timer) clearInterval(timer);
-    };
-  }, [isOpen, mode, clientId, onClose, onSuccess]);
 
   if (!isOpen) return null;
 
@@ -238,31 +132,6 @@ export function AuthModal({
             {error}
           </div>
         )}
-
-        {/* Google 1-Click Sign-In / Sign-Up */}
-        <div className="mb-4">
-          <div
-            ref={googleBtnRef}
-            className="flex justify-center min-h-[40px] items-center"
-          />
-          {!googleLoaded && (
-            <div className="w-full py-2.5 px-4 rounded-xl border border-zinc-800 bg-zinc-900 flex items-center justify-center gap-2 text-xs text-zinc-400">
-              <span className="w-3.5 h-3.5 border-2 border-zinc-500 border-t-white rounded-full animate-spin" />
-              <span>
-                Loading Google {mode === "signin" ? "Sign-In" : "Sign-Up"}...
-              </span>
-            </div>
-          )}
-        </div>
-
-        <div className="relative my-4 flex items-center justify-center">
-          <div className="absolute inset-0 flex items-center">
-            <div className="w-full border-t border-zinc-800" />
-          </div>
-          <span className="relative bg-zinc-950 px-2 text-[10px] uppercase font-semibold text-zinc-500 tracking-wider">
-            or continue with email & password
-          </span>
-        </div>
 
         {/* Email & Password Form */}
         <form onSubmit={handleSubmit} className="space-y-3.5">

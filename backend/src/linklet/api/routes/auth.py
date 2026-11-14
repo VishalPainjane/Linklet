@@ -1,16 +1,13 @@
-"""Authentication and user session routes."""
+"""Standard stateless JWT authentication routes."""
 
-import json
-import secrets
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
 import bcrypt
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
-from google.auth.transport import requests as google_requests
-from google.oauth2 import id_token
+import jwt
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
-from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from linklet.api.deps import get_current_user, get_session
@@ -18,7 +15,6 @@ from linklet.config import settings
 from linklet.models.user import User
 from linklet.schemas.auth import (
     AuthResponse,
-    GoogleAuthRequest,
     LoginRequest,
     RegisterRequest,
     UserResponse,
@@ -41,77 +37,30 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
         return False
 
 
-@router.post("/login", response_model=AuthResponse, status_code=status.HTTP_200_OK)
-async def login(
-    payload: LoginRequest,
-    request: Request,
-    response: Response,
-    session: AsyncSession = Depends(get_session),
-) -> AuthResponse:
-    """Sign in an existing user with email and password."""
-    email = payload.email.strip().lower()
-    if not email or "@" not in email:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Valid email required.",
-        )
-
-    result = await session.execute(select(User).where(User.email == email))
-    user = result.scalar_one_or_none()
-
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid email or password.",
-        )
-
-    # Verify password if user has password_hash
-    if user.password_hash:
-        if not verify_password(payload.password, user.password_hash):
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid email or password.",
-            )
-    else:
-        # Legacy user logging in with password for the first time
-        user.password_hash = hash_password(payload.password)
-        await session.commit()
-
-    token = f"lkt_sess_{secrets.token_hex(24)}"
-    session_data = {
-        "id": str(user.id),
-        "email": user.email,
-        "created_at": user.created_at.isoformat(),
+def create_access_token(
+    user_id: UUID | str,
+    email: str | None,
+    created_at: datetime | str | None = None,
+) -> str:
+    """Create a standard signed JWT access token."""
+    now = datetime.now(UTC)
+    exp = now + timedelta(minutes=settings.jwt_expire_minutes)
+    payload: dict[str, Any] = {
+        "sub": str(user_id),
+        "email": email,
+        "iat": int(now.timestamp()),
+        "exp": int(exp.timestamp()),
     }
-
-    redis_client = getattr(request.app.state, "redis", None)
-    if redis_client:
-        await redis_client.set(f"session:{token}", json.dumps(session_data), ex=7 * 86400)
-    else:
-        if not hasattr(request.app.state, "sessions"):
-            request.app.state.sessions = {}
-        request.app.state.sessions[f"session:{token}"] = json.dumps(session_data)
-
-    response.set_cookie(
-        key="linklet_session",
-        value=token,
-        max_age=7 * 86400,
-        httponly=True,
-        samesite="lax",
-        secure=False,
-    )
-
-    return AuthResponse(
-        token=token,
-        user=UserResponse(id=user.id, email=user.email, created_at=user.created_at),
-    )
+    if created_at is not None:
+        payload["created_at"] = (
+            created_at.isoformat() if isinstance(created_at, datetime) else str(created_at)
+        )
+    return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
 
 
 @router.post("/register", response_model=AuthResponse, status_code=status.HTTP_201_CREATED)
 async def register(
     payload: RegisterRequest,
-    request: Request,
-    response: Response,
     session: AsyncSession = Depends(get_session),
 ) -> AuthResponse:
     """Register a new user account with email and password."""
@@ -140,124 +89,46 @@ async def register(
     await session.commit()
     await session.refresh(user)
 
-    token = f"lkt_sess_{secrets.token_hex(24)}"
-    session_data = {
-        "id": str(user.id),
-        "email": user.email,
-        "created_at": user.created_at.isoformat(),
-    }
-
-    redis_client = getattr(request.app.state, "redis", None)
-    if redis_client:
-        await redis_client.set(f"session:{token}", json.dumps(session_data), ex=7 * 86400)
-    else:
-        if not hasattr(request.app.state, "sessions"):
-            request.app.state.sessions = {}
-        request.app.state.sessions[f"session:{token}"] = json.dumps(session_data)
-
-    response.set_cookie(
-        key="linklet_session",
-        value=token,
-        max_age=7 * 86400,
-        httponly=True,
-        samesite="lax",
-        secure=False,
-    )
+    token = create_access_token(user_id=user.id, email=user.email, created_at=user.created_at)
 
     return AuthResponse(
         token=token,
+        token_type="bearer",
         user=UserResponse(id=user.id, email=user.email, created_at=user.created_at),
     )
 
 
-
-
-@router.post("/google", response_model=AuthResponse, status_code=status.HTTP_200_OK)
-async def login_with_google(
-    payload: GoogleAuthRequest,
-    request: Request,
-    response: Response,
+@router.post("/login", response_model=AuthResponse, status_code=status.HTTP_200_OK)
+async def login(
+    payload: LoginRequest,
     session: AsyncSession = Depends(get_session),
 ) -> AuthResponse:
-    """Verify Google OAuth credential ID token and establish session."""
-    token_str = payload.credential.strip()
-    if not token_str:
+    """Sign in an existing user with email and password."""
+    email = payload.email.strip().lower()
+    if not email or "@" not in email:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Credential token is required.",
+            detail="Valid email required.",
         )
 
-    # In local testing/dev, support test token prefix
-    if settings.environment == "development" and token_str.startswith("dev_test_"):
-        mock_email = token_str.replace("dev_test_", "").strip().lower()
-        id_info: dict[str, Any] = {"email": mock_email, "name": "Google Test User"}
-    else:
-        try:
-            client_id = settings.google_client_id
-            id_info = id_token.verify_oauth2_token(  # type: ignore[no-untyped-call]
-                token_str,
-                google_requests.Request(),
-                audience=client_id if client_id else None,
-            )
-        except Exception as exc:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail=f"Invalid Google authentication token: {exc}",
-            ) from exc
+    result = await session.execute(select(User).where(User.email == email))
+    user = result.scalar_one_or_none()
 
-    raw_email = id_info.get("email")
-    if not raw_email or not isinstance(raw_email, str):
+    if (
+        not user
+        or not user.password_hash
+        or not verify_password(payload.password, user.password_hash)
+    ):
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Google account does not have an associated email address.",
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid email or password.",
         )
-    email: str = raw_email.strip().lower()
 
-    # 1. Upsert / Fetch user in PostgreSQL
-    stmt = (
-        pg_insert(User)
-        .values(email=email)
-        .on_conflict_do_update(
-            index_elements=[User.email],
-            set_={"email": email},
-        )
-        .returning(User)
-    )
-    res = await session.execute(stmt)
-    await session.commit()
-    user = res.scalar_one()
-
-    # 2. Issue cryptographically secure 192-bit session token
-    token = f"lkt_sess_{secrets.token_hex(24)}"
-    session_data = {
-        "id": str(user.id),
-        "email": user.email,
-        "name": id_info.get("name"),
-        "picture": id_info.get("picture"),
-        "created_at": user.created_at.isoformat(),
-    }
-
-    # 3. Store session in Redis with 7-day TTL (or in-memory store)
-    redis_client = getattr(request.app.state, "redis", None)
-    if redis_client:
-        await redis_client.set(f"session:{token}", json.dumps(session_data), ex=7 * 86400)
-    else:
-        if not hasattr(request.app.state, "sessions"):
-            request.app.state.sessions = {}
-        request.app.state.sessions[f"session:{token}"] = json.dumps(session_data)
-
-    # 4. Set HttpOnly Cookie for automatic browser session management
-    response.set_cookie(
-        key="linklet_session",
-        value=token,
-        max_age=7 * 86400,
-        httponly=True,
-        samesite="lax",
-        secure=False,
-    )
+    token = create_access_token(user_id=user.id, email=user.email, created_at=user.created_at)
 
     return AuthResponse(
         token=token,
+        token_type="bearer",
         user=UserResponse(id=user.id, email=user.email, created_at=user.created_at),
     )
 
@@ -266,34 +137,24 @@ async def login_with_google(
 async def get_current_user_profile(
     current_user: dict[str, Any] = Depends(get_current_user),
 ) -> UserResponse:
-    """Retrieve currently active user session profile."""
+    """Retrieve currently active user profile from JWT."""
+    created_at_val = current_user.get("created_at")
+    if created_at_val:
+        try:
+            created_at_dt = datetime.fromisoformat(created_at_val)
+        except Exception:
+            created_at_dt = datetime.now(UTC)
+    else:
+        created_at_dt = datetime.now(UTC)
+
     return UserResponse(
         id=UUID(current_user["id"]),
         email=current_user.get("email"),
-        created_at=current_user["created_at"],
+        created_at=created_at_dt,
     )
 
 
 @router.post("/logout", status_code=status.HTTP_200_OK)
-async def logout(
-    request: Request,
-    response: Response,
-) -> dict[str, str]:
-    """Revoke session token from Redis and clear session cookie."""
-    auth_header = request.headers.get("Authorization")
-    token: str | None = None
-    if auth_header and auth_header.startswith("Bearer "):
-        token = auth_header[7:].strip()
-    elif "linklet_session" in request.cookies:
-        token = request.cookies.get("linklet_session")
-
-    if token:
-        redis_client = getattr(request.app.state, "redis", None)
-        if redis_client:
-            await redis_client.delete(f"session:{token}")
-        in_memory_sessions = getattr(request.app.state, "sessions", None)
-        if in_memory_sessions and f"session:{token}" in in_memory_sessions:
-            del in_memory_sessions[f"session:{token}"]
-
-    response.delete_cookie("linklet_session")
+async def logout() -> dict[str, str]:
+    """Logout endpoint (JWT is stateless, discard token on client)."""
     return {"message": "Logged out successfully"}

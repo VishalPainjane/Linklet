@@ -10,11 +10,10 @@ dependencies = [
     "asyncpg>=0.32.0",
     "bcrypt>=5.0.0",
     "fastapi>=0.162.2",
-    "google-auth>=2.62.2",
     "httpx>=0.28.1",
     "pydantic-settings>=2.16.2",
+    "pyjwt>=2.8.0",
     "redis[hiredis]>=8.1.0",
-    "requests>=2.34.2",
     "sqlalchemy[asyncio]>=2.1.8",
     "uvicorn[standard]>=0.54.0",
 ]

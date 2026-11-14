@@ -16,6 +16,8 @@ services:
         value: "false"
       - key: DATABASE_URL
         sync: false # Paste your Neon PostgreSQL connection string here
+      - key: REDIS_URL
+        sync: false # Paste your Upstash Redis connection string (rediss://default:<password>@<host>:6379)
       - key: PUBLIC_SHORT_BASE_URL
         value: "https://linklet-six.vercel.app"
       - key: ALLOWED_CORS_ORIGINS
@@ -24,7 +26,5 @@ services:
         value: "true"
       - key: RUN_OUTBOX_WORKER
         value: "true"
-      - key: GOOGLE_CLIENT_ID
-        sync: false
-      - key: GOOGLE_CLIENT_SECRET
-        sync: false
+      - key: JWT_SECRET
+        generateValue: true
