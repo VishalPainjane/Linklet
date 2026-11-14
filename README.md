@@ -49,64 +49,21 @@ Linklet separates read, write, and telemetry flows into dedicated stages:
 
 ## 3. Performance & Empirical Benchmarks
 
-Linklet was benchmarked under synthetic and sustained workloads across multi-worker clusters backed by PostgreSQL 17, Redis 7, and RabbitMQ 4.
+Linklet was validated under high-concurrency synthetic and sustained workloads backed by **PostgreSQL 17**, **Redis 7**, and **RabbitMQ 4**.
 
-### 3.1 Sustained Load Performance (500 Concurrent Users)
-Under continuous sustained load testing, response times were recorded directly at the server layer to evaluate genuine backend processing duration:
+### Key Benchmark Results:
+- **Sustained Throughput:** **2,002.1 requests/sec** under continuous 500-user load (58,145 total requests processed).
+- **Service Availability:** **99.998% success rate** (58,144 out of 58,145 succeeded; 1 transient network failure).
+- **Server Response Latency:**
+  - **Median (p50):** **16.7 ms**
+  - **90th Percentile (p90):** **42.2 ms**
+  - **99th Percentile (p99):** **97.4 ms**
+  - **Maximum:** **244.0 ms**
+- **Strict SLA Boundary:** **79.4%** of all requests completed in $\le 25\text{ ms}$, **99.2%** completed in $\le 100\text{ ms}$, and **zero requests** exceeded $250\text{ ms}$.
+- **Write Scalability:** Migrating from single-writer SQLite to PostgreSQL 17 with connection pooling reduced p90 write latency by **34.3x** (from 9,600 ms down to 280 ms at 1,000 concurrent writers).
+- **Load Balancing:** In a 4-worker cluster, traffic was distributed with near-perfect uniformity (24.5% to 25.3% per node) with ~16 ms median latency across all workers.
 
-- **Workload Concurrency:** 500 concurrent virtual users (30-second sustained load)
-- **Total Requests Processed:** 58,145 requests
-- **Sustained Throughput:** 2,002.1 requests/sec
-- **Service Availability:** 99.998% (58,144 out of 58,145 succeeded)
-- **Median Response Time (p50):** 16.7 ms
-- **90th Percentile (p90):** 42.2 ms
-- **95th Percentile (p95):** 61.7 ms
-- **99th Percentile (p99):** 97.4 ms
-- **Maximum Duration:** 244.0 ms
-
-#### Response Latency Distribution
-- **Within 10 ms:** 8,460 requests (14.5%)
-- **Within 25 ms:** 37,742 requests (64.9%) — **79.4% cumulative**
-- **Within 50 ms:** 7,419 requests (12.8%) — **92.2% cumulative**
-- **Within 100 ms:** 4,042 requests (7.0%) — **99.2% cumulative**
-- **Within 250 ms:** 482 requests (0.8%) — **100.0% cumulative**
-- **Exceeding 250 ms:** 0 requests (0.0%)
-
-### 3.2 Concurrency Scaling (100 to 1,000 Users)
-System stability and latency consistency were evaluated as concurrent virtual users scaled from 100 to 1,000:
-
-| Concurrent Users | Throughput | Median (p50) | 90th % (p90) | 95th % (p95) | 99th % (p99) |
-| :---: | :---: | :---: | :---: | :---: | :---: |
-| **100 Users** | 375.6 req/s | 30.2 ms | 83.5 ms | 123.9 ms | 300.6 ms |
-| **250 Users** | 384.1 req/s | 33.3 ms | 69.5 ms | 91.2 ms | 245.6 ms |
-| **500 Users** | 374.8 req/s | 38.4 ms | 97.0 ms | 141.4 ms | 229.1 ms |
-| **750 Users** | 378.4 req/s | 35.0 ms | 83.9 ms | 109.4 ms | 177.7 ms |
-| **1,000 Users**| 365.9 req/s | 36.4 ms | 92.7 ms | 133.4 ms | 200.4 ms |
-
-Across a 10x increase in concurrency, median server latency remained consistent between 30 ms and 38 ms, demonstrating resilience against traffic spikes.
-
-### 3.3 Database Write Scaling: SQLite vs. PostgreSQL 17
-URL creation (`POST /api/v1/urls`) requires database writes. This test measures the write latency improvements gained by migrating from SQLite single-writer locking to PostgreSQL 17 Multi-Version Concurrency Control (MVCC) with asynchronous connection pooling:
-
-| Concurrency Level | SQLite Single Writer (Baseline) | PostgreSQL 17 + asyncpg | Improvement Factor |
-| :--- | :--- | :--- | :--- |
-| **50 Concurrent Users** | 37 ms median | 15 ms median | 2.5x faster |
-| **250 Concurrent Users** | 730 ms median | 130 ms median | 5.6x faster |
-| **500 Concurrent Users** | 4,900 ms median | 160 ms median | 30.6x faster writes |
-| **1,000 Concurrent Users** | 4,300 ms median | 160 ms median | 26.8x faster writes |
-| **1,000 Users (p90 Tail)** | 9,600 ms p90 | 280 ms p90 | 34.3x reduction in tail latency |
-
-### 3.4 Multi-Worker Load Balancing
-In a 4-worker cluster topology, incoming requests were distributed across worker processes via round-robin reverse proxy routing:
-
-| Worker Node | Processed Requests | Traffic Share | Median (p50) | 95th % (p95) | 99th % (p99) |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| **Worker 1** | 14,547 requests | 25.02% | 16.6 ms | 74.4 ms | 103.8 ms |
-| **Worker 2** | 14,274 requests | 24.55% | 16.2 ms | 50.6 ms | 91.7 ms |
-| **Worker 3** | 14,713 requests | 25.30% | 17.4 ms | 64.8 ms | 91.8 ms |
-| **Worker 4** | 14,611 requests | 25.13% | 16.7 ms | 56.8 ms | 93.3 ms |
-
-All workers handled between 24.5% and 25.3% of total traffic, proving balanced load distribution without hot-spotting.
+> For the complete multi-concurrency scaling tables (100 to 1,000 users), step-load diagnostics, latency histograms, and raw CSV/JSON test datasets, refer to the [**Benchmark & Performance Reference**](results/README.md).
 
 ---
 
