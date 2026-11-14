@@ -69,38 +69,21 @@ Linklet was validated under high-concurrency synthetic and sustained workloads b
 
 ## 4. Data Layer, Caching & Messaging
 
-Linklet delegates persistence, memory caching, and event delivery to specialized infrastructure components engineered to eliminate database contention and guarantee high availability:
+Linklet isolates high-speed traffic from persistent storage using three specialized systems:
 
-### 4.1 PostgreSQL 17 (Relational Persistence & Concurrency)
-- **Authoritative Source of Truth:** While Redis and in-memory buffers handle high-speed traffic, PostgreSQL maintains ACID durability for user accounts, short code registries, outbox event ledgers, and aggregated analytics.
-- **Multi-Version Concurrency Control (MVCC):** Unlike single-writer file-based databases (such as SQLite) that lock the entire database file during writes, PostgreSQL utilizes MVCC and row-level locking. Readers never block writers, and concurrent link creation requests insert into separate rows without contention.
-- **Asynchronous Connection Pooling (`asyncpg`):** Opening new database connections incurs significant network latency and SSL handshake overhead. Linklet maintains a pre-warmed asynchronous connection pool (`DB_POOL_SIZE=10`, `DB_MAX_OVERFLOW=5`). Coroutines acquire active sockets in sub-millisecond time and release them immediately upon query completion. Inactive connections are periodically recycled (`DB_POOL_RECYCLE=300`) to prevent stale connections or firewall drops.
-
-### 4.2 Redis 7 / Upstash (In-Memory Caching & State Management)
-- **Cache-Aside Read Path (`url:{code}`):** When a redirect request arrives, the backend checks Redis memory first. On a cache hit, the destination URL is returned within 1 to 2 milliseconds, resolving the redirect without querying the database. On a cache miss, the record is retrieved from PostgreSQL, written to Redis with a 15-minute expiration (`CACHE_DEFAULT_TTL_SECONDS=900`), and served to the user.
-- **Cache Drift Prevention via Tombstones (`tombstone:{code}`):** In distributed architectures, deleting database rows while simultaneously clearing cache entries introduces race conditions where concurrent reads can re-populate stale data. Linklet solves this using invalidation tombstones. When a link is deleted or deactivated, an explicit tombstone is written to Redis with a 1-hour expiration. Subsequent requests seeing this tombstone immediately return HTTP 410 Gone directly from memory, eliminating cache drift and avoiding database roundtrips.
-- **Pipelined Sliding Window Rate Limiting (`rate:create:{ip}`):** Rate limiting prevents endpoint abuse by tracking per-IP request counts inside a sliding 60-second window. Linklet uses atomic Redis pipelines (`pipe.incr` and `pipe.expire`) to evaluate and enforce thresholds in a single network roundtrip without requiring distributed locks or custom scripts.
-
-### 4.3 RabbitMQ 4 (Event Streaming & Telemetry Ingestion)
-- **Eliminating Synchronous Database Bottlenecks:** A major bottleneck in URL redirection systems is synchronously incrementing database click counters during the redirect loop. Under viral traffic surges, hundreds of simultaneous clicks on the same link fight for the same row-level database lock, causing database connection pools to exhaust and latency to degrade.
-- **Microsecond In-Memory Buffering:** Linklet completely isolates the redirect execution from database writes. When a link is clicked, telemetry metadata (timestamp, user agent, referrer, and country code) is pushed into a bounded in-memory buffer in under 50 microseconds, allowing the HTTP redirect response to return immediately to the visitor.
-- **Durable Event Queuing:** Background dispatcher tasks drain the in-memory buffer to RabbitMQ topic exchanges (`analytics.events`) and durable queues (`url.clicks.v1`). Message persistence and publisher confirmations guarantee telemetry records survive process restarts, while dead-letter exchanges (`analytics.dlx`) isolate corrupted messages without blocking delivery.
-- **Idempotent Batch Draining:** Background consumer workers ingest click events in batches (`AMQP_PREFETCH=50`) and flush them into PostgreSQL. Deduplication tables (`processed_events`) ensure that if a worker restarts or redelivers a message, events are deduplicated automatically, guaranteeing accurate click counts without locking the user-facing read path.
+- **PostgreSQL 17 (Persistence):** Primary ACID source of truth for users and URLs. Utilizes row-level locking (MVCC) and connection pooling via `asyncpg` so concurrent writes never block incoming reads.
+- **Redis 7 (Caching & State):** High-speed in-memory store. Serves cached redirects (`url:{code}`) in ~2 ms, caches deletion tombstones (`tombstone:{code}`) to instantly return HTTP 410 Gone, and enforces sliding window rate limits.
+- **RabbitMQ 4 (Event Streaming):** Decouples click analytics from redirects. Clicks are buffered in memory and dispatched asynchronously to durable queues (`url.clicks.v1`), completely eliminating database lock contention during traffic spikes.
 
 ---
 
-## 5. Authentication & Security
+## 5. Authentication
 
-Linklet uses standard, stateless **JSON Web Token (JWT)** authentication:
+Linklet uses standard token-based authentication with Bcrypt password hashing:
 
-- **Password Security:** Passwords are encrypted using 12 rounds of salted `bcrypt` hashing with constant-time verification.
-- **Stateless Tokens:** Authentication tokens are signed using the `HS256` algorithm with a 7-day expiration. Tokens carry standard identity claims (`sub`, `email`, `iat`, `exp`).
-- **Zero-Lookup Authorization:** Protected API routes validate incoming `Authorization: Bearer <token>` headers cryptographically in memory without issuing queries to the database or Redis session stores.
-- **Core Endpoints:**
-  - `POST /api/v1/auth/register` — Creates an account and returns a JWT Bearer token (HTTP 201).
-  - `POST /api/v1/auth/login` — Authenticates credentials and returns a JWT Bearer token (HTTP 200).
-  - `GET /api/v1/auth/me` — Returns the authenticated user profile.
-  - `POST /api/v1/auth/logout` — Stateless logout on the client side.
+- **Access Token:** Short-lived signed JWT used in the `Authorization: Bearer <token>` header to authenticate API requests. Valid for 15 minutes.
+- **Refresh Token:** Long-lived token used to obtain a new access token without re-authenticating. Valid for 7 days (10,080 minutes).
+- **Core Endpoints:** Registration (`/register`), Login (`/login`), Profile (`/me`), and Logout (`/logout`).
 
 ---
 
@@ -170,20 +153,17 @@ Implements the transactional outbox pattern to guarantee reliable event dispatch
 
 ---
 
-## 7. Configuration & Environment Settings
+## 7. Key Numeric Configurations
 
-Linklet exposes connection pooling, socket caching, and pipeline concurrency controls via environment variables:
+Core connection pooling, caching, and concurrency thresholds:
 
-| Setting | Default Value | Category | Description |
-| :--- | :--- | :--- | :--- |
-| **DATABASE_URL** | PostgreSQL connection string | Database | Primary connection string for async database operations |
-| **DB_POOL_SIZE** | `10` | Database | Baseline persistent connections maintained in the pool |
-| **DB_MAX_OVERFLOW** | `5` | Database | Maximum burst connections allocated during peak spikes |
-| **DB_POOL_TIMEOUT** | `5.0` | Database | Seconds to wait for an available socket before raising a timeout |
-| **DB_POOL_RECYCLE** | `300` | Database | Seconds before recycling connections to avoid stale connections |
-| **REDIS_URL** | `redis://localhost:6379/0` | Cache | Connection URI for the Redis cache cluster |
-| **REDIS_MAX_CONNECTIONS** | `50` | Cache | Maximum concurrent connections allowed in the Redis pool |
-| **CACHE_DEFAULT_TTL_SECONDS** | `900` | Cache | Expiration time for cached active URL mappings (15 minutes) |
-| **AMQP_URL** | `amqp://guest:guest@localhost:5672/` | Messaging | Connection URI for the RabbitMQ event broker |
-| **AMQP_PREFETCH** | `50` | Messaging | Prefetch batch limit for background analytics consumers |
-| **JWT_SECRET** | Change in production | Security | Cryptographic secret key used to sign and verify JWT tokens |
+| Parameter | Default Value | Description |
+| :--- | :--- | :--- |
+| **DB_POOL_SIZE** | `10` | Baseline persistent database connection pool size |
+| **DB_MAX_OVERFLOW** | `5` | Maximum temporary connections allowed during traffic surges |
+| **DB_POOL_TIMEOUT** | `5.0` | Maximum wait time in seconds for a pool socket |
+| **DB_POOL_RECYCLE** | `300` | Seconds before recycling idle connections to prevent stale sockets |
+| **REDIS_MAX_CONNECTIONS** | `50` | Maximum concurrent connections in the Redis connection pool |
+| **CACHE_DEFAULT_TTL_SECONDS** | `900` | URL cache expiration duration in seconds (15 minutes) |
+| **AMQP_PREFETCH** | `50` | Message batch prefetch limit for analytics consumer workers |
+| **JWT_EXPIRE_MINUTES** | `10080` | Refresh token expiration window in minutes (7 days) |
